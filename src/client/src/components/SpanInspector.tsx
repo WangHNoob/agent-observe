@@ -5,11 +5,21 @@ import { StatusBadge, fmtMs } from "./Atoms";
 function KnownSections({ attributes }: { attributes: Record<string, unknown> }) {
   const sections: { title: string; body: string; kind?: "tool" | "reasoning" | "output" }[] = [];
 
+  // JSON 字符串美化展示（工具出参/入参通常是 JSON）
+  const pretty = (v: unknown): string => {
+    if (typeof v !== "string") return String(v);
+    try {
+      return JSON.stringify(JSON.parse(v), null, 2);
+    } catch {
+      return v;
+    }
+  };
+
   if (attributes.toolArguments != null) {
-    sections.push({ title: "工具入参", body: String(attributes.toolArguments), kind: "tool" });
+    sections.push({ title: "工具入参", body: pretty(attributes.toolArguments), kind: "tool" });
   }
   if (attributes.toolResult != null) {
-    sections.push({ title: "工具出参", body: String(attributes.toolResult), kind: "tool" });
+    sections.push({ title: "工具出参", body: pretty(attributes.toolResult), kind: "tool" });
   }
   if (attributes.llmReasoning != null) {
     sections.push({ title: "LLM 思考", body: String(attributes.llmReasoning), kind: "reasoning" });
