@@ -218,6 +218,22 @@ input:focus, select:focus { border-color: var(--accent); }
 .detail-ids { display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-top: 10px; }
 .detail-ids b { color: var(--text-faint); font-weight: 500; }
 
+/* Agent 文本输出（requirement / result） */
+.output-box {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.65;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.output-box.result { border-color: rgba(52, 211, 153, 0.35); }
+
 .kv { display: grid; grid-template-columns: 150px 1fr; gap: 5px 12px; font-size: 13px; }
 .kv dt { color: var(--text-dim); }
 .kv dd { margin: 0; font-family: var(--mono); font-size: 12.5px; word-break: break-all; }

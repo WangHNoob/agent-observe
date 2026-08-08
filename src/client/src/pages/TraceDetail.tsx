@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { deleteTrace, fetchTrace, type Span } from "../api/observe";
+import { deleteTrace, fetchExecution, fetchTrace, type Span } from "../api/observe";
 import {
   Empty,
   ErrorBox,
@@ -14,6 +14,7 @@ import {
   fmtTokens,
 } from "../components/Atoms";
 import { PageHeader } from "../components/Layout";
+import { SpanInspector } from "../components/SpanInspector";
 import { Waterfall } from "../components/Waterfall";
 
 export function TraceDetail() {
@@ -25,6 +26,14 @@ export function TraceDetail() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["trace", id],
     queryFn: () => fetchTrace(id),
+  });
+
+  // 关联 execution：展示请求需求与 agent 最终输出
+  const executionId = data?.trace.executionId ?? null;
+  const exec = useQuery({
+    queryKey: ["trace-execution", executionId],
+    queryFn: () => fetchExecution(executionId!),
+    enabled: executionId != null,
   });
 
   const delMutation = useMutation({
@@ -69,49 +78,46 @@ export function TraceDetail() {
           <dt>attributes</dt><dd>{JSON.stringify(trace.attributes)}</dd>
           <dt>token（cost 汇总）</dt><dd>{fmtTokens(tokens)}</dd>
         </dl>
-      <div className="detail-ids">
-        <span><b>sessionId</b> <Link to={`/traces?sessionId=${trace.sessionId}`}>{trace.sessionId}</Link></span>
-        <span><b>executionId</b> {trace.executionId ? <Link to={`/executions/${trace.executionId}`}>{trace.executionId}</Link> : "—"}</span>
-        <span><b>userId</b> {trace.userId}</span>
-        <span><b>traceSessionId</b> {trace.traceSessionId}</span>
-        <span style={{ marginLeft: "auto" }}>
-          <button className="icon-btn" title="删除此 trace" disabled={delMutation.isPending} onClick={confirmDelete}>
-            <Trash2 size={14} />
-            {delMutation.isPending ? "删除中…" : "删除"}
-          </button>
-        </span>
+        <div className="detail-ids">
+          <span><b>sessionId</b> <Link to={`/traces?sessionId=${trace.sessionId}`}>{trace.sessionId}</Link></span>
+          <span><b>executionId</b> {trace.executionId ? <Link to={`/executions/${trace.executionId}`}>{trace.executionId}</Link> : "—"}</span>
+          <span><b>userId</b> {trace.userId}</span>
+          <span><b>traceSessionId</b> {trace.traceSessionId}</span>
+          <span style={{ marginLeft: "auto" }}>
+            <button className="icon-btn" title="删除此 trace" disabled={delMutation.isPending} onClick={confirmDelete}>
+              <Trash2 size={14} />
+              {delMutation.isPending ? "删除中…" : "删除"}
+            </button>
+          </span>
+        </div>
       </div>
-    </div>
+
+      {exec.data ? (
+        <div className="card">
+          <h2>请求与 Agent 输出</h2>
+          <dl className="kv">
+            <dt>requirement</dt>
+            <dd>
+              <div className="output-box" style={{ maxHeight: 160 }}>
+                {String(exec.data.execution.requestPayload?.requirement ?? "—")}
+              </div>
+            </dd>
+            <dt>agent 输出</dt>
+            <dd>
+              <div className="output-box result">
+                {String(exec.data.execution.resultPayload?.output ?? "（无输出）")}
+              </div>
+            </dd>
+          </dl>
+        </div>
+      ) : null}
 
       <div className="card">
         <h2>Span 瀑布图（{spans.length} 个 span）</h2>
         <Waterfall spans={spans} selectedId={selected?.id ?? null} onSelect={setSelected} />
       </div>
 
-      {selected ? (
-        <div className="card">
-          <h2>Span 详情 · {selected.name}</h2>
-          <dl className="kv">
-            <dt>id</dt><dd>{selected.id}</dd>
-            <dt>parentSpanId</dt><dd>{selected.parentSpanId ?? "—"}</dd>
-            <dt>phase</dt><dd>{selected.phase ?? "—"}</dd>
-            <dt>kind</dt><dd>{selected.kind}</dd>
-            <dt>status</dt><dd><StatusBadge status={selected.status} /></dd>
-            <dt>duration</dt><dd>{fmtMs(selected.durationMs)}</dd>
-            <dt>startedAt</dt><dd>{selected.startedAt}</dd>
-            <dt>attributes</dt>
-            <dd>
-              {Object.keys(selected.attributes).length === 0 ? (
-                <span className="muted">（空）</span>
-              ) : (
-                <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>
-                  {JSON.stringify(selected.attributes, null, 2)}
-                </pre>
-              )}
-            </dd>
-          </dl>
-        </div>
-      ) : null}
+      {selected ? <SpanInspector span={selected} /> : null}
 
       <div className="two-col">
         <div className="card">

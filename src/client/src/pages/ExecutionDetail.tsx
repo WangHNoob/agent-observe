@@ -1,14 +1,31 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchExecution } from "../api/observe";
+import { fetchExecution, fetchTrace, fetchTraces, type Span } from "../api/observe";
 import { Empty, ErrorBox, Spin, StatusBadge, fmtTime } from "../components/Atoms";
 import { PageHeader } from "../components/Layout";
+import { SpanInspector } from "../components/SpanInspector";
+import { Waterfall } from "../components/Waterfall";
 
 export function ExecutionDetail() {
   const { id = "" } = useParams();
+  const [selected, setSelected] = useState<Span | null>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["execution", id],
     queryFn: () => fetchExecution(id),
+  });
+
+  // 关联 trace（九态 span）：execution → trace 反查，内嵌瀑布图
+  const execTraces = useQuery({
+    queryKey: ["execution-traces", id],
+    queryFn: () => fetchTraces({ executionId: id, limit: 1 }),
+  });
+  const firstTraceId = execTraces.data?.items?.[0]?.id ?? null;
+  const traceDetail = useQuery({
+    queryKey: ["execution-trace-detail", firstTraceId],
+    queryFn: () => fetchTrace(firstTraceId!),
+    enabled: firstTraceId != null,
   });
 
   if (isLoading) return <Spin />;
@@ -42,6 +59,28 @@ export function ExecutionDetail() {
           <dt>deadlineAt</dt><dd>{execution.deadlineAt ?? "—"}</dd>
         </dl>
       </div>
+
+      {execution.resultPayload?.output ? (
+        <div className="card">
+          <h2>Agent 输出（结果）</h2>
+          <div className="output-box result">{String(execution.resultPayload.output)}</div>
+        </div>
+      ) : null}
+
+      {traceDetail.data ? (
+        <div className="card">
+          <h2>
+            关联 Trace（九态 span · {traceDetail.data.spans.length} 个） ·{" "}
+            <Link to={`/traces/${traceDetail.data.trace.id}`}>打开完整详情 →</Link>
+          </h2>
+          <Waterfall
+            spans={traceDetail.data.spans}
+            selectedId={selected?.id ?? null}
+            onSelect={setSelected}
+          />
+        </div>
+      ) : null}
+      {selected ? <SpanInspector span={selected} /> : null}
 
       <div className="card">
         <h2>任务 DAG（{tasks.length} 个任务）</h2>
