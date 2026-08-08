@@ -121,6 +121,8 @@ table.data td {
   vertical-align: top;
 }
 table.data tr:hover td { background: rgba(22, 33, 58, 0.6); }
+table.data tr.clickable { cursor: pointer; }
+table.data tr.clickable td { transition: background 0.12s ease; }
 table.data td.num { font-family: var(--mono); text-align: right; }
 
 /* ─── 徽标 ─────────────────────────────────────────────── */

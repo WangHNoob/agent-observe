@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   deleteTrace,
   fetchOverview,
@@ -19,6 +19,7 @@ function daysAgoIso(days: number): string {
 }
 
 export function TraceList() {
+  const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const [filters, setFilters] = useState<TraceFilters>(() => ({
     mode: search.get("mode") ?? undefined,
@@ -207,16 +208,32 @@ export function TraceList() {
             </thead>
             <tbody>
               {data.items.map((t) => (
-                <tr key={t.id}>
+                <tr
+                  key={t.id}
+                  className="clickable"
+                  onClick={() => navigate(`/traces/${t.id}`)}
+                  title="点击查看详情"
+                >
                   <td className="mono">{fmtTime(t.startedAt)}</td>
-                  <td><Link to={`/traces/${t.id}`}>{t.mode ?? t.name}</Link></td>
+                  <td>{t.mode ?? t.name}</td>
                   <td><StatusBadge status={t.status} /></td>
                   <td className="num">{fmtMs(t.durationMs)}</td>
                   <td className="num">{fmtTokens(t.inputTokens + t.outputTokens)}</td>
-                  <td className="mono">{t.executionId ? <Link to={`/executions/${t.executionId}`}>{t.executionId.slice(0, 12)}…</Link> : "—"}</td>
-                  <td className="mono">{t.sessionId.slice(0, 12)}…</td>
+                  <td className="mono" onClick={(e) => e.stopPropagation()}>
+                    {t.executionId ? <Link to={`/executions/${t.executionId}`}>{t.executionId.slice(0, 12)}…</Link> : "—"}
+                  </td>
+                  <td className="mono" onClick={(e) => e.stopPropagation()}>
+                    {t.sessionId.slice(0, 12)}…
+                  </td>
                   <td className="mono">{t.userId.slice(0, 8)}…</td>
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <Link
+                      className="btn ghost"
+                      to={`/traces/${t.id}`}
+                      style={{ padding: "3px 10px", fontSize: 12, marginRight: 6 }}
+                    >
+                      查看详情
+                    </Link>
                     {pruneAvailable ? (
                       <button
                         className="icon-btn"
