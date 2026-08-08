@@ -18,12 +18,18 @@ export interface OverviewData {
   /** 24h 逐小时桶（含空桶） */
   trend: { bucket: string; n: number; errors: number }[];
   recentErrors: { id: string; name: string; startedAt: string; durationMs: number | null }[];
+  /** trace 保留（TTL）配置：保留天数（0=禁用清理）与管理功能是否可用 */
+  retentionDays: number;
+  pruneAvailable: boolean;
 }
 
 const WINDOW_HOURS = 24;
 
 export class OverviewService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly meta: { retentionDays: number; pruneAvailable: boolean },
+  ) {}
 
   async getOverview(): Promise<OverviewData> {
     const [totals, status, modes, tokens, trend, recent] = await Promise.all([
@@ -117,6 +123,8 @@ export class OverviewService {
         startedAt: r.startedAt as string,
         durationMs: r.durationMs != null ? Number(r.durationMs) : null,
       })),
+      retentionDays: this.meta.retentionDays,
+      pruneAvailable: this.meta.pruneAvailable,
     };
   }
 }

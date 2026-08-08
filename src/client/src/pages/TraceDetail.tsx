@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { fetchTrace, type Span } from "../api/observe";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { deleteTrace, fetchTrace, type Span } from "../api/observe";
 import {
   Empty,
   ErrorBox,
@@ -18,11 +19,29 @@ import { Waterfall } from "../components/Waterfall";
 export function TraceDetail() {
   const { id = "" } = useParams();
   const [selected, setSelected] = useState<Span | null>(null);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["trace", id],
     queryFn: () => fetchTrace(id),
   });
+
+  const delMutation = useMutation({
+    mutationFn: () => deleteTrace(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["traces"] });
+      void queryClient.invalidateQueries({ queryKey: ["overview"] });
+      navigate("/traces");
+    },
+  });
+
+  const confirmDelete = async () => {
+    if (!window.confirm(`删除 trace「${data?.trace.name ?? id}」(${id.slice(0, 12)}…)？\n将级联删除其 span / cost / audit，不可恢复。`)) {
+      return;
+    }
+    await delMutation.mutateAsync();
+  };
 
   if (isLoading) return <Spin />;
   if (error) return <ErrorBox error={error} />;
@@ -50,13 +69,19 @@ export function TraceDetail() {
           <dt>attributes</dt><dd>{JSON.stringify(trace.attributes)}</dd>
           <dt>token（cost 汇总）</dt><dd>{fmtTokens(tokens)}</dd>
         </dl>
-        <div className="detail-ids">
-          <span><b>sessionId</b> <Link to={`/traces?sessionId=${trace.sessionId}`}>{trace.sessionId}</Link></span>
-          <span><b>executionId</b> {trace.executionId ? <Link to={`/executions/${trace.executionId}`}>{trace.executionId}</Link> : "—"}</span>
-          <span><b>userId</b> {trace.userId}</span>
-          <span><b>traceSessionId</b> {trace.traceSessionId}</span>
-        </div>
+      <div className="detail-ids">
+        <span><b>sessionId</b> <Link to={`/traces?sessionId=${trace.sessionId}`}>{trace.sessionId}</Link></span>
+        <span><b>executionId</b> {trace.executionId ? <Link to={`/executions/${trace.executionId}`}>{trace.executionId}</Link> : "—"}</span>
+        <span><b>userId</b> {trace.userId}</span>
+        <span><b>traceSessionId</b> {trace.traceSessionId}</span>
+        <span style={{ marginLeft: "auto" }}>
+          <button className="icon-btn" title="删除此 trace" disabled={delMutation.isPending} onClick={confirmDelete}>
+            <Trash2 size={14} />
+            {delMutation.isPending ? "删除中…" : "删除"}
+          </button>
+        </span>
       </div>
+    </div>
 
       <div className="card">
         <h2>Span 瀑布图（{spans.length} 个 span）</h2>

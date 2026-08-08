@@ -17,6 +17,10 @@ export interface OverviewData {
   modeBreakdown: { mode: string; n: number; errors: number }[];
   trend: { bucket: string; n: number; errors: number }[];
   recentErrors: { id: string; name: string; startedAt: string; durationMs: number | null }[];
+  /** trace 保留（TTL）配置 */
+  retentionDays: number;
+  /** 管理功能（删除/清理）是否可用 */
+  pruneAvailable: boolean;
 }
 
 export interface TraceListItem {
@@ -160,4 +164,20 @@ export function fetchTrace(id: string): Promise<TraceDetail> {
 
 export function fetchExecution(id: string): Promise<ExecutionDetail> {
   return apiFetch(`/api/executions/${encodeURIComponent(id)}`);
+}
+
+// ─── 管理（删除 / 清理；后端无 obs_manager 连接时返回 503） ──────────────
+
+export function deleteTrace(id: string): Promise<{ deleted: boolean; id: string }> {
+  return apiFetch(`/api/traces/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function pruneTraces(
+  filters: TraceFilters,
+  dryRun: boolean,
+): Promise<{ matched: number; dryRun: boolean }> {
+  return apiFetch("/api/traces/prune", {
+    method: "POST",
+    body: JSON.stringify({ filters, dryRun }),
+  });
 }

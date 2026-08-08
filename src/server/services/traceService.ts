@@ -124,8 +124,28 @@ function traceFilterParams(f: TraceFilters): (string | number | null)[] {
   ];
 }
 
+export class ManagementDisabledError extends Error {
+  constructor() {
+    super("Trace management disabled: OBS_MANAGER_DATABASE_URL not configured");
+    this.name = "ManagementDisabledError";
+  }
+}
+
 export class TraceService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly managerDb?: Database,
+  ) {}
+
+  /** 管理功能（删除/清理）是否可用：依赖 obs_manager 连接 */
+  get managementEnabled(): boolean {
+    return this.managerDb != null;
+  }
+
+  private requireManager(): Database {
+    if (!this.managerDb) throw new ManagementDisabledError();
+    return this.managerDb;
+  }
 
   async listTraces(
     filters: TraceFilters,
@@ -237,6 +257,67 @@ export class TraceService {
         createdAt: r.createdAt as string,
       })),
     };
+  }
+
+  // ─── 管理操作（obs_manager，事务内执行） ───────────────────────────────
+
+  /** 删除单条 trace：级联 span，并清理其 cost/audit 与孤儿 trace 会话。 */
+  async deleteTrace(traceId: string): Promise<boolean> {
+    const db = this.requireManager();
+    await db.query("BEGIN");
+    try {
+      const del = await db.query(`DELETE FROM agent_traces WHERE id = $1`, [traceId]);
+      const deleted = (del.rowCount ?? 0) > 0;
+      if (deleted) {
+        await db.query(`DELETE FROM cost_usage WHERE trace_id = $1`, [traceId]);
+        await db.query(`DELETE FROM audit_logs WHERE trace_id = $1`, [traceId]);
+        await this.cleanupOrphanTraceSessions(db);
+      }
+      await db.query("COMMIT");
+      return deleted;
+    } catch (err) {
+      await db.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /**
+   * 按筛选批量清理 trace。dryRun 只统计不删除（用于前端预览）。
+   * 返回匹配数量。
+   */
+  async pruneTraces(filters: TraceFilters, dryRun = false): Promise<number> {
+    const db = this.requireManager();
+    const params = traceFilterParams(filters);
+    const clause = traceFilterClause();
+
+    const countResult = await db.query(
+      `SELECT COUNT(*)::int AS total FROM agent_traces t${clause}`,
+      params,
+    );
+    const matched = Number(countResult.rows[0]?.total ?? 0);
+    if (dryRun || matched === 0) return matched;
+
+    await db.query("BEGIN");
+    try {
+      const sub = `SELECT id FROM agent_traces t${clause}`;
+      await db.query(`DELETE FROM cost_usage WHERE trace_id IN (${sub})`, params);
+      await db.query(`DELETE FROM audit_logs WHERE trace_id IN (${sub})`, params);
+      await db.query(`DELETE FROM agent_traces t${clause}`, params);
+      await this.cleanupOrphanTraceSessions(db);
+      await db.query("COMMIT");
+      return matched;
+    } catch (err) {
+      await db.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /** 删除不再被任何 trace 引用的 agent_trace_sessions 行。 */
+  private async cleanupOrphanTraceSessions(db: Database): Promise<void> {
+    await db.query(
+      `DELETE FROM agent_trace_sessions
+       WHERE NOT EXISTS (SELECT 1 FROM agent_traces t WHERE t.trace_session_id = agent_trace_sessions.id)`,
+    );
   }
 }
 

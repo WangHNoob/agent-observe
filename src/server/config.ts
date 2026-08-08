@@ -5,6 +5,12 @@
 export interface AppConfig {
   /** 只读连接串（默认指向 design-agent 共享库的 obs_reader 角色） */
   databaseUrl: string;
+  /** 管理连接串（obs_manager：删除/清理）。未配置时管理功能禁用。 */
+  managerDatabaseUrl?: string;
+  /** trace 保留天数（TTL）：started_at 早于该值会被后台清理器删除；0 = 禁用清理 */
+  traceRetentionDays: number;
+  /** 保留清理器运行间隔（毫秒） */
+  retentionSweepIntervalMs: number;
   /** JWT 签名密钥 */
   jwtSecret: string;
   /** 单管理员登录密码（本地/自部署场景，不做多用户体系） */
@@ -28,6 +34,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl:
       env.OBS_DATABASE_URL ??
       "postgresql://obs_reader:obs_reader_dev@localhost:5433/game_designer?options=-c%20default_transaction_read_only%3Don",
+    managerDatabaseUrl: env.OBS_MANAGER_DATABASE_URL || undefined,
+    traceRetentionDays: Number(env.OBS_TRACE_RETENTION_DAYS ?? 90),
+    retentionSweepIntervalMs: Number(env.OBS_RETENTION_SWEEP_INTERVAL_MS ?? 3_600_000),
     jwtSecret: required("OBS_JWT_SECRET", env),
     adminPassword: required("OBS_ADMIN_PASSWORD", env),
     port: Number(env.PORT ?? 4180),
