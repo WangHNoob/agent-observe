@@ -1,0 +1,163 @@
+import { apiFetch, queryString, setToken } from "./http";
+
+// ─── 类型（与后端 services 对齐） ────────────────────────────────────────
+
+export interface OverviewData {
+  windowHours: number;
+  tracesTotal: number;
+  tracesOk: number;
+  tracesError: number;
+  errorRate: number;
+  avgDurationMs: number;
+  p50DurationMs: number;
+  maxDurationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  statusBreakdown: { status: string; n: number }[];
+  modeBreakdown: { mode: string; n: number; errors: number }[];
+  trend: { bucket: string; n: number; errors: number }[];
+  recentErrors: { id: string; name: string; startedAt: string; durationMs: number | null }[];
+}
+
+export interface TraceListItem {
+  id: string;
+  name: string;
+  mode: string | null;
+  status: string;
+  userId: string;
+  sessionId: string;
+  executionId: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  costRows: number;
+}
+
+export interface Span {
+  id: string;
+  parentSpanId: string | null;
+  name: string;
+  phase: string | null;
+  kind: string;
+  status: string;
+  attributes: Record<string, unknown>;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+}
+
+export interface TraceDetail {
+  trace: {
+    id: string;
+    userId: string;
+    traceSessionId: string;
+    sessionId: string;
+    executionId: string | null;
+    name: string;
+    status: string;
+    attributes: Record<string, unknown>;
+    startedAt: string;
+    endedAt: string | null;
+    durationMs: number | null;
+    createdAt: string;
+  };
+  spans: Span[];
+  costRows: {
+    agentName: string | null;
+    modelName: string | null;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostMicros: string;
+    createdAt: string;
+  }[];
+  auditRows: {
+    action: string;
+    resourceType: string | null;
+    resourceId: string | null;
+    outcome: string;
+    detail: Record<string, unknown>;
+    createdAt: string;
+  }[];
+}
+
+export interface ExecutionDetail {
+  execution: {
+    id: string;
+    userId: string;
+    sessionId: string;
+    idempotencyKey: string;
+    status: string;
+    requestPayload: Record<string, unknown>;
+    planPayload: Record<string, unknown> | null;
+    resultPayload: Record<string, unknown> | null;
+    errorClass: string | null;
+    errorMessage: string | null;
+    deadlineAt: string | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string;
+  };
+  tasks: {
+    id: string;
+    taskKey: string;
+    name: string;
+    agentName: string | null;
+    status: string;
+    dependencies: unknown;
+    position: number;
+    errorClass: string | null;
+    errorMessage: string | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    attempts: {
+      attemptNumber: number;
+      status: string;
+      errorClass: string | null;
+      errorCode: string | null;
+      errorMessage: string | null;
+      startedAt: string;
+      finishedAt: string | null;
+    }[];
+  }[];
+}
+
+export interface TraceFilters {
+  mode?: string;
+  status?: string;
+  name?: string;
+  sessionId?: string;
+  executionId?: string;
+  userId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ─── API ─────────────────────────────────────────────────────────────────
+
+export async function login(password: string): Promise<void> {
+  const res = await apiFetch<{ token: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+  setToken(res.token);
+}
+
+export function fetchOverview(): Promise<OverviewData> {
+  return apiFetch("/api/overview");
+}
+
+export function fetchTraces(filters: TraceFilters): Promise<{ items: TraceListItem[]; total: number }> {
+  return apiFetch(`/api/traces${queryString(filters as Record<string, string | number | undefined>)}`);
+}
+
+export function fetchTrace(id: string): Promise<TraceDetail> {
+  return apiFetch(`/api/traces/${encodeURIComponent(id)}`);
+}
+
+export function fetchExecution(id: string): Promise<ExecutionDetail> {
+  return apiFetch(`/api/executions/${encodeURIComponent(id)}`);
+}
