@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { Span } from "../api/observe";
 import { StatusBadge, fmtMs } from "./Atoms";
 
@@ -22,18 +23,31 @@ function jsonHighlight(raw: string): string {
 }
 
 function RawJson({ value }: { value: string }) {
+  const [open, setOpen] = useState(false);
+  const html = useMemo(() => (open ? jsonHighlight(value) : ""), [open, value]);
+
   return (
-    <details className="collapse">
+    <details
+      className="collapse"
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
       <summary>查看原始 JSON（{value.length.toLocaleString()} 字符）</summary>
-      <pre className="raw-json" dangerouslySetInnerHTML={{ __html: jsonHighlight(value) }} />
+      {open ? (
+        value.length > 80_000 ? (
+          <pre className="raw-json">{value}</pre>
+        ) : (
+          <pre className="raw-json" dangerouslySetInnerHTML={{ __html: html }} />
+        )
+      ) : null}
     </details>
   );
 }
 
-/** 对象数组 → HTML 表格（列取首行键，表头吸顶）。 */
+/** 对象数组 → HTML 表格（列取首行键，表头吸顶）。大结果截断避免卡顿。 */
 function RowsTable({ rows, title }: { rows: Record<string, unknown>[]; title?: string }) {
   const keys = rows.length > 0 ? Object.keys(rows[0]!) : [];
   if (keys.length === 0) return <div className="muted">（空）</div>;
+  const shown = rows.slice(0, 100);
   return (
     <div style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto" }}>
       {title ? <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{title}</div> : null}
@@ -44,7 +58,7 @@ function RowsTable({ rows, title }: { rows: Record<string, unknown>[]; title?: s
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
+          {shown.map((row, i) => (
             <tr key={i}>
               {keys.map((k) => (
                 <td key={k} className="mono" style={{ fontSize: 12 }}>{String(row[k] ?? "")}</td>
@@ -53,6 +67,11 @@ function RowsTable({ rows, title }: { rows: Record<string, unknown>[]; title?: s
           ))}
         </tbody>
       </table>
+      {rows.length > shown.length ? (
+        <div className="muted" style={{ fontSize: 12, padding: "6px 0" }}>
+          仅展示前 {shown.length} / {rows.length} 行（完整数据见原始 JSON）
+        </div>
+      ) : null}
     </div>
   );
 }
