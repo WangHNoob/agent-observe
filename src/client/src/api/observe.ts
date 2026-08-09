@@ -154,6 +154,10 @@ export function fetchOverview(): Promise<OverviewData> {
   return apiFetch("/api/overview");
 }
 
+export function fetchMeta(): Promise<{ retentionDays: number; pruneAvailable: boolean }> {
+  return apiFetch("/api/meta");
+}
+
 export function fetchTraces(filters: TraceFilters): Promise<{ items: TraceListItem[]; total: number }> {
   return apiFetch(`/api/traces${queryString(filters as Record<string, string | number | undefined>)}`);
 }
