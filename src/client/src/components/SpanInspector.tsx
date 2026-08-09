@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { Span } from "../api/observe";
 import { StatusBadge, fmtMs } from "./Atoms";
 
@@ -180,8 +181,8 @@ function KnownSections({ attributes }: { attributes: Record<string, unknown> }) 
   return (
     <>
       {sections.map((s) => (
-        <div key={s.title} style={{ marginBottom: 12 }}>
-          <div className="muted" style={{ fontSize: 11.5, letterSpacing: 0.6, marginBottom: 5, textTransform: "uppercase" }}>
+        <div key={s.title} style={{ marginBottom: 14 }}>
+          <div className="section-label">
             {s.title}
             {s.kind === "reasoning" ? " · reasoning_content" : ""}
           </div>
@@ -201,7 +202,7 @@ function KnownSections({ attributes }: { attributes: Record<string, unknown> }) 
 }
 
 /** span 属性面板（瀑布图点击后展示），trace 详情与执行详情共用。 */
-export function SpanInspector({ span }: { span: Span }) {
+export function SpanInspector({ span, onClose }: { span: Span; onClose?: () => void }) {
   const { toolArguments, toolResult, llmReasoning, llmOutput, inputTokens, outputTokens, ...rest } =
     span.attributes;
   const tokenLine =
@@ -209,9 +210,13 @@ export function SpanInspector({ span }: { span: Span }) {
       ? `in ${String(inputTokens ?? 0)} / out ${String(outputTokens ?? 0)}`
       : null;
 
+  useEffect(() => {
+    document.getElementById("span-inspector")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [span.id]);
+
   return (
-    <div className="card">
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+    <div className="card" id="span-inspector">
+      <div className="span-inspector-head">
         <span className="badge neutral">{span.phase ?? "span"}</span>
         <span className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{span.name}</span>
         <StatusBadge status={span.status} />
@@ -219,13 +224,16 @@ export function SpanInspector({ span }: { span: Span }) {
           {fmtMs(span.durationMs)}
           {tokenLine ? ` · ${tokenLine}` : ""}
         </span>
+        {onClose ? (
+          <button type="button" className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={onClose}>
+            关闭
+          </button>
+        ) : null}
       </div>
       <KnownSections attributes={span.attributes} />
       {Object.keys(rest).length > 0 ? (
         <>
-          <div className="muted" style={{ fontSize: 11.5, letterSpacing: 0.6, margin: "10px 0 4px", textTransform: "uppercase" }}>
-            其他属性
-          </div>
+          <div className="section-label" style={{ marginTop: 10 }}>其他属性</div>
           <details className="collapse">
             <summary>查看其他属性（{Object.keys(rest).length} 项）</summary>
             <pre className="raw-json" dangerouslySetInnerHTML={{ __html: jsonHighlight(JSON.stringify(rest, null, 2)) }} />
