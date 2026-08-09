@@ -120,7 +120,16 @@ export function Waterfall({ spans, selectedId, onSelect }: WaterfallProps) {
               className={`wf-row${selectedId === span.id ? " selected" : ""}`}
               style={meta.tint ? { background: meta.tint } : undefined}
               onClick={() => onSelect(span)}
-              title={meta.legend}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect(span);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              title={`${meta.legend} · ${span.name}`}
+              aria-pressed={selectedId === span.id}
             >
               <div className="wf-label" style={{ paddingLeft: depth * 14 }}>
                 <span className="wf-glyph" style={{ color: meta.color }}>{meta.glyph}</span>
