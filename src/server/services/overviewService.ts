@@ -24,14 +24,23 @@ export interface OverviewData {
 }
 
 const WINDOW_HOURS = 24;
+/** 总览短缓存：Dashboard 30s 轮询时命中，避免连打重查询 */
+const CACHE_TTL_MS = 15_000;
 
 export class OverviewService {
+  private cache: { at: number; data: OverviewData } | null = null;
+
   constructor(
     private readonly db: Database,
     private readonly meta: { retentionDays: number; pruneAvailable: boolean },
   ) {}
 
   async getOverview(): Promise<OverviewData> {
+    const nowMs = Date.now();
+    if (this.cache && nowMs - this.cache.at < CACHE_TTL_MS) {
+      return this.cache.data;
+    }
+
     const [totals, status, modes, tokens, trend, recent] = await Promise.all([
       this.db.query(
         `SELECT COUNT(*)::int AS "tracesTotal",
@@ -71,7 +80,9 @@ export class OverviewService {
       this.db.query(
         `SELECT id, name, started_at AS "startedAt",
                 EXTRACT(EPOCH FROM (ended_at - started_at)) * 1000 AS "durationMs"
-         FROM agent_traces WHERE status = 'error'
+         FROM agent_traces
+         WHERE status = 'error'
+           AND started_at >= now() - interval '${WINDOW_HOURS} hours'
          ORDER BY started_at DESC LIMIT 20`,
       ),
     ]);
@@ -81,7 +92,6 @@ export class OverviewService {
     const total = Number(totalsRow?.tracesTotal ?? 0);
     const error = Number(totalsRow?.tracesError ?? 0);
 
-    // 补齐 24h 内缺失的小时桶（零填充），保证前端条图连续
     const buckets = new Map<string, { n: number; errors: number }>();
     for (const r of trend.rows) {
       buckets.set(r.bucket as string, { n: Number(r.n ?? 0), errors: Number(r.errors ?? 0) });
@@ -96,7 +106,7 @@ export class OverviewService {
       trendFilled.push({ bucket: key, ...row });
     }
 
-    return {
+    const data: OverviewData = {
       windowHours: WINDOW_HOURS,
       tracesTotal: total,
       tracesOk: Number(totalsRow?.tracesOk ?? 0),
@@ -126,5 +136,8 @@ export class OverviewService {
       retentionDays: this.meta.retentionDays,
       pruneAvailable: this.meta.pruneAvailable,
     };
+
+    this.cache = { at: nowMs, data };
+    return data;
   }
 }

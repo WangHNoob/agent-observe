@@ -155,6 +155,21 @@ describe("overview", () => {
   });
 });
 
+describe("meta", () => {
+  it("returns retention flags without heavy aggregation", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/meta", headers: auth(token) });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(typeof body.retentionDays).toBe("number");
+    expect(typeof body.pruneAvailable).toBe("boolean");
+  });
+
+  it("requires auth", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/meta" });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
 describe("executions", () => {
   it("returns 404 for unknown execution", async () => {
     const res = await app.inject({
