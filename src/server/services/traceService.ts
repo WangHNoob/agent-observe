@@ -87,18 +87,6 @@ export interface TraceDetail {
 
 // ─── 服务 ──────────────────────────────────────────────────────────────
 
-const TRACE_LIST_SELECT = `
-  SELECT t.id, t.name, t.status, t.user_id AS "userId",
-         t.session_id AS "sessionId", t.execution_id AS "executionId",
-         t.started_at AS "startedAt", t.ended_at AS "endedAt",
-         EXTRACT(EPOCH FROM (t.ended_at - t.started_at)) * 1000 AS "durationMs",
-         split_part(t.name, '.', 2) AS mode,
-         COALESCE(SUM(c.input_tokens), 0)::int AS "inputTokens",
-         COALESCE(SUM(c.output_tokens), 0)::int AS "outputTokens",
-         COUNT(c.id)::int AS "costRows"
-  FROM agent_traces t
-  LEFT JOIN cost_usage c ON c.trace_id = t.id`;
-
 function traceFilterClause(): string {
   return `
   WHERE ($1::text IS NULL OR t.user_id = $1)
@@ -109,6 +97,33 @@ function traceFilterClause(): string {
     AND ($6::text IS NULL OR t.status = $6)
     AND ($7::timestamptz IS NULL OR t.started_at >= $7)
     AND ($8::timestamptz IS NULL OR t.started_at <= $8)`;
+}
+
+/** 先按筛选分页取页内 trace，再 JOIN cost 聚合——避免对全量匹配行做 GROUP BY。 */
+function traceListPageSql(): string {
+  return `
+  WITH page AS (
+    SELECT t.id, t.name, t.status, t.user_id, t.session_id, t.execution_id,
+           t.started_at, t.ended_at,
+           EXTRACT(EPOCH FROM (t.ended_at - t.started_at)) * 1000 AS duration_ms,
+           split_part(t.name, '.', 2) AS mode
+    FROM agent_traces t
+    ${traceFilterClause()}
+    ORDER BY t.started_at DESC
+    LIMIT $9 OFFSET $10
+  )
+  SELECT p.id, p.name, p.status, p.user_id AS "userId",
+         p.session_id AS "sessionId", p.execution_id AS "executionId",
+         p.started_at AS "startedAt", p.ended_at AS "endedAt",
+         p.duration_ms AS "durationMs", p.mode,
+         COALESCE(SUM(c.input_tokens), 0)::int AS "inputTokens",
+         COALESCE(SUM(c.output_tokens), 0)::int AS "outputTokens",
+         COUNT(c.id)::int AS "costRows"
+  FROM page p
+  LEFT JOIN cost_usage c ON c.trace_id = p.id
+  GROUP BY p.id, p.name, p.status, p.user_id, p.session_id, p.execution_id,
+           p.started_at, p.ended_at, p.duration_ms, p.mode
+  ORDER BY p.started_at DESC`;
 }
 
 function traceFilterParams(f: TraceFilters): (string | number | null)[] {
@@ -156,18 +171,13 @@ export class TraceService {
     const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
     const params = traceFilterParams(filters);
 
-    const items = await this.db.query<pg.QueryResultRow>(
-      `${TRACE_LIST_SELECT}${traceFilterClause()}
-       GROUP BY t.id
-       ORDER BY t.started_at DESC
-       LIMIT $9 OFFSET $10`,
-      [...params, limit, offset],
-    );
-
-    const count = await this.db.query<pg.QueryResultRow>(
-      `SELECT COUNT(*)::int AS total FROM agent_traces t${traceFilterClause()}`,
-      params,
-    );
+    const [items, count] = await Promise.all([
+      this.db.query<pg.QueryResultRow>(traceListPageSql(), [...params, limit, offset]),
+      this.db.query<pg.QueryResultRow>(
+        `SELECT COUNT(*)::int AS total FROM agent_traces t${traceFilterClause()}`,
+        params,
+      ),
+    ]);
 
     return {
       items: items.rows.map(rowToListItem),
@@ -299,10 +309,20 @@ export class TraceService {
 
     await db.query("BEGIN");
     try {
-      const sub = `SELECT id FROM agent_traces t${clause}`;
-      await db.query(`DELETE FROM cost_usage WHERE trace_id IN (${sub})`, params);
-      await db.query(`DELETE FROM audit_logs WHERE trace_id IN (${sub})`, params);
-      await db.query(`DELETE FROM agent_traces t${clause}`, params);
+      // 一次选出匹配 id，再删关联行 + trace，避免同一子查询跑三遍
+      await db.query(
+        `WITH doomed AS (
+           SELECT id FROM agent_traces t${clause}
+         ),
+         del_cost AS (
+           DELETE FROM cost_usage WHERE trace_id IN (SELECT id FROM doomed)
+         ),
+         del_audit AS (
+           DELETE FROM audit_logs WHERE trace_id IN (SELECT id FROM doomed)
+         )
+         DELETE FROM agent_traces WHERE id IN (SELECT id FROM doomed)`,
+        params,
+      );
       await this.cleanupOrphanTraceSessions(db);
       await db.query("COMMIT");
       return matched;
