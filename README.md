@@ -45,10 +45,14 @@ pnpm build && pnpm start
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/auth/login` | 管理员密码 → JWT |
-| GET | `/api/overview` | 24h 总览：数量/错误率/时长分位/Token/趋势桶/最近错误/保留配置 |
-| GET | `/api/traces` | 列表（userId/sessionId/executionId/name/mode/status/from/to + 分页） |
-| GET | `/api/traces/:id` | 详情：trace + spans（瀑布图数据）+ cost + audit |
-| GET | `/api/executions/:id` | 执行详情：七态 execution + DAG tasks + attempts 重试链 |
+| GET | `/api/auth/me` | 当前 JWT 身份 |
+| GET | `/api/health` | 健康检查（无需鉴权） |
+| GET | `/api/meta` | 轻量元信息：`retentionDays` / `pruneAvailable`（无 DB 聚合） |
+| GET | `/api/overview` | 24h 总览：数量/错误率/时长分位/Token/趋势桶/最近错误/保留配置（服务端约 15s 短缓存） |
+| GET | `/api/traces` | 列表（userId/sessionId/executionId/name/mode/status/from/to + 分页；先分页再聚合 cost） |
+| GET | `/api/traces/:id` | 详情：trace + **lite spans**（默认仅保留 token 键）+ cost + audit + `executionSummary`；`?full=1` 返回完整 span attributes |
+| GET | `/api/traces/:id/spans/:spanId` | 按需拉取单个 span 的完整 attributes（瀑布图点击后） |
+| GET | `/api/executions/:id` | 执行详情：七态 execution + DAG tasks + attempts；`?include=primaryTrace` 一次附带主 Trace（lite spans） |
 | GET | `/api/sessions/:id` | 会话详情：会话 + 其 traces + 其 executions |
 
 管理（`obs_manager`，未配置 `OBS_MANAGER_DATABASE_URL` 时返回 503）：
@@ -56,22 +60,33 @@ pnpm build && pnpm start
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | DELETE | `/api/traces/:id` | 删除单条 trace（级联 span + cost/audit + 孤儿会话） |
-| POST | `/api/traces/prune` | 按筛选批量清理：`{ filters, dryRun }`；dryRun 只返回匹配数 |
+| POST | `/api/traces/prune` | 按筛选批量清理：`{ filters, dryRun }`；dryRun 只返回匹配数（删除用单次 CTE） |
 
 保留（TTL）：`OBS_TRACE_RETENTION_DAYS`（默认 90，0=禁用）——清理器启动时跑一次，之后按 `OBS_RETENTION_SWEEP_INTERVAL_MS`（默认 1h）定期删除 `started_at` 早于保留期的 trace。
 
 ## 前端页面
 
-- `/` 总览：指标卡 + 24h 逐小时趋势条图 + 分模式统计 + 最近错误
-- `/traces` 列表：多条件筛选 + 分页 + **单条删除**（行内）与**批量清理面板**（按状态/保留期预览匹配数 → 确认删除）
-- `/traces/:id` 详情：**span 瀑布图**（纯 CSS 按时长比例绘制，九态 phase 着色，error 红标）+ span 属性面板 + cost/audit 关联 + **删除**入口
-- `/executions/:id` 详情：任务 DAG 序列 + 每次重试 attempt 的错误链
+深色仪器台主题（DM Sans + IBM Plex Mono）：统一空态 / 加载态 / 错误态，详情页可返回，Trace ID 可复制。
+
+- `/` 总览：指标卡 + 24h 逐小时趋势条图 + 分模式统计 + 最近错误（约 30s 轮询，配合 overview 短缓存）
+- `/traces` 列表：多条件筛选（Enter / 重置）+ 分页；保留策略走 `/api/meta`；**单条删除**与**批量清理面板**（预览匹配数 → 确认删除）
+- `/traces/:id` 详情：**span 瀑布图**（九态 phase 着色，键盘可选中）→ 点击后再拉完整 attributes；内嵌 requirement / agent 输出摘要；cost / audit；删除入口
+- `/executions/:id` 详情：一次请求含主 Trace 瀑布图 + 任务 DAG + attempts 重试链
+
+## 性能要点
+
+- Trace 列表：先 `LIMIT/OFFSET` 再 JOIN `cost_usage` 聚合，避免对全量匹配行 GROUP BY
+- Trace / Execution 详情：默认 lite spans，大段 tool/LLM JSON 按需加载
+- Overview：15s 进程内短缓存；`recentErrors` 限制在近 24h
+- 前端：Waterfall `useMemo` + 行 memo；JSON 仅在展开时语法高亮；大结果表截断展示
 
 ## 测试
 
 ```bash
+pnpm typecheck
 pnpm test        # 真实 PostgreSQL + app.inject 路由测试
                  # 管理用例用 obs_manager 自建 fixture（插入后由被测删除逻辑清理），不触碰真实数据
+pnpm build       # 前端 vite 构建
 ```
 
 ## 路线图（未实施）
@@ -79,3 +94,4 @@ pnpm test        # 真实 PostgreSQL + app.inject 路由测试
 - Redis 执行事件流回放（chunk 文本回放，依赖 design-agent Redis 留存）
 - OTLP exporter 对接（Jaeger/Tempo，属 agent 端事项）
 - 多用户 / 只读角色密码轮换
+- 共享库建议索引（`agent_traces(started_at DESC)` / `(execution_id)` / `agent_spans(trace_id)` 等）
