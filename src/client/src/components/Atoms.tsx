@@ -14,8 +14,8 @@ export function Empty({ text }: { text: string }) {
   return <div className="empty">{text}</div>;
 }
 
-export function Spin() {
-  return <div className="spin">加载中…</div>;
+export function Spin({ label = "加载中…" }: { label?: string } = {}) {
+  return <div className="spin">{label}</div>;
 }
 
 export function ErrorBox({ error }: { error: unknown }) {
