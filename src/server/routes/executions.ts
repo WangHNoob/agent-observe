@@ -15,11 +15,22 @@ export async function executionsRoutes(
       if (!ID_PATTERN.test(id)) {
         return reply.code(400).send({ error: "Invalid executionId" });
       }
+      const q = req.query as { include?: string };
+      const includePrimaryTrace =
+        q.include === "primaryTrace" ||
+        (typeof q.include === "string" && q.include.split(",").includes("primaryTrace"));
+
       const detail = await opts.ctx.executionService.getExecution(id);
       if (!detail) {
         return reply.code(404).send({ error: "Execution not found" });
       }
-      return detail;
+
+      if (!includePrimaryTrace) {
+        return detail;
+      }
+
+      const primaryTrace = await opts.ctx.traceService.getPrimaryTraceByExecution(id);
+      return { ...detail, primaryTrace };
     },
   );
 }
