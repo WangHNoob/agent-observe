@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchSpan, type Span } from "../api/observe";
 import { ErrorBox, Spin, StatusBadge, fmtMs } from "./Atoms";
@@ -94,7 +94,6 @@ function ToolResultView({ value }: { value: string }) {
   const obj = parsed as Record<string, unknown>;
   const result = obj?.result as Record<string, unknown> | undefined;
 
-  // 表格形状：result.rows 为对象数组
   if (Array.isArray(result?.rows) && result.rows.length > 0) {
     const rows = result.rows as Record<string, unknown>[];
     return (
@@ -112,7 +111,6 @@ function ToolResultView({ value }: { value: string }) {
     );
   }
 
-  // 搜索命中：result.hits
   if (Array.isArray(result?.hits)) {
     const hits = result.hits as Record<string, unknown>[];
     return (
@@ -138,7 +136,6 @@ function ToolResultView({ value }: { value: string }) {
     );
   }
 
-  // 文档内容：result.content / text
   const content = result?.content ?? result?.text;
   if (typeof content === "string" && content.length > 0) {
     return (
@@ -153,7 +150,6 @@ function ToolResultView({ value }: { value: string }) {
     );
   }
 
-  // 其他：pretty JSON + 原始
   return (
     <>
       <div className="output-box">{JSON.stringify(parsed, null, 2)}</div>
@@ -200,8 +196,8 @@ function KnownSections({ attributes }: { attributes: Record<string, unknown> }) 
   return (
     <>
       {sections.map((s) => (
-        <div key={s.title} style={{ marginBottom: 12 }}>
-          <div className="muted" style={{ fontSize: 11.5, letterSpacing: 0.6, marginBottom: 5, textTransform: "uppercase" }}>
+        <div key={s.title} style={{ marginBottom: 14 }}>
+          <div className="section-label">
             {s.title}
             {s.kind === "reasoning" ? " · reasoning_content" : ""}
           </div>
@@ -220,16 +216,17 @@ function KnownSections({ attributes }: { attributes: Record<string, unknown> }) 
   );
 }
 
-/** span 属性面板（瀑布图点击后展示），trace 详情与执行详情共用。
- *  默认 spans 为 lite（仅 token 键）；传入 traceId 后按需拉完整 attributes。 */
+/** span 属性面板：lite spans 时按需拉取完整 attributes；支持关闭。 */
 export function SpanInspector({
   span,
   traceId,
   spansLite = false,
+  onClose,
 }: {
   span: Span;
   traceId?: string;
   spansLite?: boolean;
+  onClose?: () => void;
 }) {
   const needFetch = Boolean(traceId) && spansLite;
   const full = useQuery({
@@ -250,9 +247,13 @@ export function SpanInspector({
       ? `in ${String(inputTokens ?? 0)} / out ${String(outputTokens ?? 0)}`
       : null;
 
+  useEffect(() => {
+    document.getElementById("span-inspector")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [span.id]);
+
   return (
     <div className="card" id="span-inspector">
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+      <div className="span-inspector-head">
         <span className="badge neutral">{resolved.phase ?? "span"}</span>
         <span className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{resolved.name}</span>
         <StatusBadge status={resolved.status} />
@@ -260,6 +261,11 @@ export function SpanInspector({
           {fmtMs(resolved.durationMs)}
           {tokenLine ? ` · ${tokenLine}` : ""}
         </span>
+        {onClose ? (
+          <button type="button" className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={onClose}>
+            关闭
+          </button>
+        ) : null}
       </div>
       {loading ? <Spin label="加载 span 属性…" /> : null}
       {fetchError ? <ErrorBox error={fetchError} /> : null}
@@ -268,9 +274,7 @@ export function SpanInspector({
           <KnownSections attributes={resolved.attributes} />
           {Object.keys(rest).length > 0 ? (
             <>
-              <div className="muted" style={{ fontSize: 11.5, letterSpacing: 0.6, margin: "10px 0 4px", textTransform: "uppercase" }}>
-                其他属性
-              </div>
+              <div className="section-label" style={{ marginTop: 10 }}>其他属性</div>
               <details className="collapse">
                 <summary>查看其他属性（{Object.keys(rest).length} 项）</summary>
                 <RawJson value={JSON.stringify(rest, null, 2)} />
