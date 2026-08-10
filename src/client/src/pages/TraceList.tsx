@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   deleteTrace,
-  fetchOverview,
+  fetchMeta,
   fetchTraces,
   pruneTraces,
   type TraceFilters,
@@ -48,9 +48,9 @@ export function TraceList() {
     queryFn: () => fetchTraces({ ...filters, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
   });
 
-  const overview = useQuery({ queryKey: ["overview"], queryFn: fetchOverview });
-  const pruneAvailable = overview.data?.pruneAvailable ?? false;
-  const retentionDays = overview.data?.retentionDays ?? 0;
+  const meta = useQuery({ queryKey: ["meta"], queryFn: fetchMeta, staleTime: 60_000 });
+  const pruneAvailable = meta.data?.pruneAvailable ?? false;
+  const retentionDays = meta.data?.retentionDays ?? 0;
 
   const apply = () => {
     setPage(0);
@@ -73,6 +73,7 @@ export function TraceList() {
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["traces"] });
     void queryClient.invalidateQueries({ queryKey: ["overview"] });
+    void queryClient.invalidateQueries({ queryKey: ["meta"] });
   };
 
   const delMutation = useMutation({
