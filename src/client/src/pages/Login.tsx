@@ -28,10 +28,12 @@ export function Login() {
     <div className="login-wrap">
       <div className="login-box card">
         <div className="brand">
-          <span className="dot" />
+          <span className="dot" aria-hidden />
           agent-observe
         </div>
-        <div className="sub">Agent 全链路观测台 · 只读 · 单管理员</div>
+        <div className="sub">
+          Agent 全链路观测台 — 只读直连共享库，单管理员入口
+        </div>
         <form onSubmit={submit}>
           <input
             type="password"
@@ -39,10 +41,12 @@ export function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoFocus
+            autoComplete="current-password"
+            aria-label="管理员密码"
           />
-          {error ? <div className="err">{error}</div> : null}
+          {error ? <div className="err" role="alert">{error}</div> : null}
           <button className="btn" type="submit" disabled={busy || !password}>
-            {busy ? "登录中…" : "登录"}
+            {busy ? "登录中…" : "进入观测台"}
           </button>
         </form>
       </div>
