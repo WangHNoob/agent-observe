@@ -118,204 +118,220 @@ export function TraceList() {
   };
 
   return (
-    <>
+    <div className="list-page">
       <PageHeader title="Trace 列表" subtitle="浏览 agent 全链路记录（近 → 远）" />
 
-      {pruneAvailable ? (
-        <div className="card">
-          <h2>数据保留与清理（TTL {retentionDays > 0 ? `${retentionDays} 天` : "已禁用"}）</h2>
-          <div className="filter-bar" style={{ marginBottom: 0, boxShadow: "none", padding: 0, border: "none", background: "transparent" }}>
-            <label>
-              状态
-              <select value={pruneStatus} onChange={(e) => setPruneStatus(e.target.value)}>
-                <option value="unset">unset（未完成/异常）</option>
-                <option value="ok">ok</option>
-                <option value="error">error</option>
+      <div className="list-workspace">
+        <aside className="filter-rail" onKeyDown={onFilterKey}>
+          <div className="rail-section">
+            <h2>筛选</h2>
+            <label className="rail-field">
+              <span>模式</span>
+              <select value={draft.mode ?? ""} onChange={(e) => setDraft({ ...draft, mode: e.target.value || undefined })}>
                 <option value="">全部</option>
+                <option value="query">query</option>
+                <option value="design">design</option>
+                <option value="table">table</option>
               </select>
             </label>
-            <label>
-              早于
-              <input
-                type="number"
-                min={1}
-                max={3650}
-                placeholder="不限"
-                value={pruneDays}
-                onChange={(e) => setPruneDays(e.target.value === "" ? "" : Number(e.target.value))}
-                style={{ width: 90 }}
-              />
-              天（留空 = 不限）
+            <label className="rail-field">
+              <span>状态</span>
+              <select value={draft.status ?? ""} onChange={(e) => setDraft({ ...draft, status: e.target.value || undefined })}>
+                <option value="">全部</option>
+                <option value="ok">ok</option>
+                <option value="error">error</option>
+                <option value="unset">unset</option>
+              </select>
             </label>
-            <button className="btn ghost" disabled={pruneMutation.isPending} onClick={() => pruneMutation.mutate(true)}>
-              预览匹配数
-            </button>
-            {preview != null ? (
+            <label className="rail-field">
+              <span>名称</span>
+              <input
+                type="text"
+                placeholder="包含…"
+                value={draft.name ?? ""}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value || undefined })}
+              />
+            </label>
+            <label className="rail-field">
+              <span>sessionId</span>
+              <input
+                type="text"
+                placeholder="精确匹配"
+                value={draft.sessionId ?? ""}
+                onChange={(e) => setDraft({ ...draft, sessionId: e.target.value || undefined })}
+              />
+            </label>
+            <label className="rail-field">
+              <span>executionId</span>
+              <input
+                type="text"
+                placeholder="精确匹配"
+                value={draft.executionId ?? ""}
+                onChange={(e) => setDraft({ ...draft, executionId: e.target.value || undefined })}
+              />
+            </label>
+            <label className="rail-field">
+              <span>userId</span>
+              <input
+                type="text"
+                placeholder="精确匹配"
+                value={draft.userId ?? ""}
+                onChange={(e) => setDraft({ ...draft, userId: e.target.value || undefined })}
+              />
+            </label>
+            <div className="rail-actions">
+              <button className="btn" onClick={apply}>
+                筛选
+              </button>
+              <button className="btn ghost" type="button" onClick={resetFilters}>
+                重置
+              </button>
+            </div>
+          </div>
+
+          <div className="rail-section">
+            <h2>数据保留{retentionDays > 0 ? ` · TTL ${retentionDays}d` : ""}</h2>
+            {pruneAvailable ? (
               <>
-                <span className="mono">匹配 {preview} 条</span>
-                <button
-                  className="btn danger"
-                  disabled={pruneMutation.isPending || preview === 0}
-                  onClick={() => pruneMutation.mutate(false)}
-                >
-                  {pruneMutation.isPending ? "处理中…" : `确认删除 ${preview} 条`}
-                </button>
+                <label className="rail-field">
+                  <span>清理状态</span>
+                  <select value={pruneStatus} onChange={(e) => setPruneStatus(e.target.value)}>
+                    <option value="unset">unset</option>
+                    <option value="ok">ok</option>
+                    <option value="error">error</option>
+                    <option value="">全部</option>
+                  </select>
+                </label>
+                <label className="rail-field">
+                  <span>早于（天）</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    placeholder="不限"
+                    value={pruneDays}
+                    onChange={(e) => setPruneDays(e.target.value === "" ? "" : Number(e.target.value))}
+                  />
+                </label>
+                <div className="rail-actions">
+                  <button className="btn ghost" disabled={pruneMutation.isPending} onClick={() => pruneMutation.mutate(true)}>
+                    预览
+                  </button>
+                  {preview != null ? (
+                    <button
+                      className="btn danger"
+                      disabled={pruneMutation.isPending || preview === 0}
+                      onClick={() => pruneMutation.mutate(false)}
+                    >
+                      {pruneMutation.isPending ? "…" : `删 ${preview}`}
+                    </button>
+                  ) : null}
+                </div>
+                {preview != null ? <span className="mono muted" style={{ fontSize: 12 }}>匹配 {preview} 条</span> : null}
+                {previewMsg ? <span className="toast-ok">{previewMsg}</span> : null}
               </>
-            ) : null}
-            {previewMsg ? <span className="toast-ok">{previewMsg}</span> : null}
+            ) : (
+              <p className="rail-hint">
+                管理未启用：未配置 <code>OBS_MANAGER_DATABASE_URL</code>
+              </p>
+            )}
           </div>
-        </div>
-      ) : (
-        <div className="card">
-          <h2>数据保留</h2>
-          <span className="muted">
-            管理功能未启用：后端未配置 <code>OBS_MANAGER_DATABASE_URL</code>（删除/清理与 TTL 清理器不可用）
-          </span>
-        </div>
-      )}
+        </aside>
 
-      <div className="filter-bar" onKeyDown={onFilterKey}>
-        <label>
-          模式
-          <select value={draft.mode ?? ""} onChange={(e) => setDraft({ ...draft, mode: e.target.value || undefined })}>
-            <option value="">全部</option>
-            <option value="query">query</option>
-            <option value="design">design</option>
-            <option value="table">table</option>
-          </select>
-        </label>
-        <label>
-          状态
-          <select value={draft.status ?? ""} onChange={(e) => setDraft({ ...draft, status: e.target.value || undefined })}>
-            <option value="">全部</option>
-            <option value="ok">ok</option>
-            <option value="error">error</option>
-            <option value="unset">unset</option>
-          </select>
-        </label>
-        <input
-          type="text"
-          placeholder="名称包含…"
-          value={draft.name ?? ""}
-          onChange={(e) => setDraft({ ...draft, name: e.target.value || undefined })}
-        />
-        <input
-          type="text"
-          placeholder="sessionId"
-          value={draft.sessionId ?? ""}
-          onChange={(e) => setDraft({ ...draft, sessionId: e.target.value || undefined })}
-        />
-        <input
-          type="text"
-          placeholder="executionId"
-          value={draft.executionId ?? ""}
-          onChange={(e) => setDraft({ ...draft, executionId: e.target.value || undefined })}
-        />
-        <input
-          type="text"
-          placeholder="userId"
-          value={draft.userId ?? ""}
-          onChange={(e) => setDraft({ ...draft, userId: e.target.value || undefined })}
-        />
-        <button className="btn" onClick={apply}>
-          筛选
-        </button>
-        <button className="btn ghost" type="button" onClick={resetFilters}>
-          重置
-        </button>
+        <div className="list-main">
+          {isLoading ? (
+            <Spin label="加载 Trace 列表…" />
+          ) : error ? (
+            <ErrorBox error={error} />
+          ) : !data || data.items.length === 0 ? (
+            <div className="card" style={{ marginBottom: 0 }}>
+              <Empty text="没有匹配的 trace" hint="试试放宽筛选条件，或换个时间窗口" />
+            </div>
+          ) : (
+            <div className="table-wrap" style={{ marginBottom: 0 }}>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>模式</th>
+                    <th>状态</th>
+                    <th className="num">时长</th>
+                    <th className="num">Token</th>
+                    <th>executionId</th>
+                    <th>sessionId</th>
+                    <th>userId</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.items.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="clickable"
+                      tabIndex={0}
+                      onClick={() => navigate(`/traces/${t.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate(`/traces/${t.id}`);
+                        }
+                      }}
+                      title="点击查看详情"
+                    >
+                      <td className="mono">{fmtTime(t.startedAt)}</td>
+                      <td>{t.mode ?? t.name}</td>
+                      <td>
+                        <StatusBadge status={t.status} />
+                      </td>
+                      <td className="num">{fmtMs(t.durationMs)}</td>
+                      <td className="num">{fmtTokens(t.inputTokens + t.outputTokens)}</td>
+                      <td className="mono" onClick={(e) => e.stopPropagation()}>
+                        {t.executionId ? (
+                          <Link to={`/executions/${t.executionId}`}>{t.executionId.slice(0, 12)}…</Link>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="mono" onClick={(e) => e.stopPropagation()} title={t.sessionId}>
+                        {t.sessionId.slice(0, 12)}…
+                      </td>
+                      <td className="mono" title={t.userId}>
+                        {t.userId.slice(0, 8)}…
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <Link className="btn ghost" to={`/traces/${t.id}`} style={{ padding: "3px 10px", fontSize: 12, marginRight: 6 }}>
+                          查看
+                        </Link>
+                        {pruneAvailable ? (
+                          <button
+                            className="icon-btn"
+                            title="删除此 trace"
+                            disabled={delMutation.isPending}
+                            onClick={() => deleteOne(t.id, t.name)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="pager">
+                <button className="btn ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                  上一页
+                </button>
+                <span className="mono">
+                  {page + 1} / {totalPages} · 共 {data.total} 条
+                </span>
+                <button className="btn ghost" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>
+                  下一页
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-
-      {isLoading ? (
-        <Spin label="加载 Trace 列表…" />
-      ) : error ? (
-        <ErrorBox error={error} />
-      ) : !data || data.items.length === 0 ? (
-        <div className="card">
-          <Empty text="没有匹配的 trace" hint="试试放宽筛选条件，或换个时间窗口" />
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>模式</th>
-                <th>状态</th>
-                <th className="num">时长</th>
-                <th className="num">Token</th>
-                <th>executionId</th>
-                <th>sessionId</th>
-                <th>userId</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((t) => (
-                <tr
-                  key={t.id}
-                  className="clickable"
-                  tabIndex={0}
-                  onClick={() => navigate(`/traces/${t.id}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      navigate(`/traces/${t.id}`);
-                    }
-                  }}
-                  title="点击查看详情"
-                >
-                  <td className="mono">{fmtTime(t.startedAt)}</td>
-                  <td>{t.mode ?? t.name}</td>
-                  <td>
-                    <StatusBadge status={t.status} />
-                  </td>
-                  <td className="num">{fmtMs(t.durationMs)}</td>
-                  <td className="num">{fmtTokens(t.inputTokens + t.outputTokens)}</td>
-                  <td className="mono" onClick={(e) => e.stopPropagation()}>
-                    {t.executionId ? (
-                      <Link to={`/executions/${t.executionId}`}>{t.executionId.slice(0, 12)}…</Link>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="mono" onClick={(e) => e.stopPropagation()} title={t.sessionId}>
-                    {t.sessionId.slice(0, 12)}…
-                  </td>
-                  <td className="mono" title={t.userId}>
-                    {t.userId.slice(0, 8)}…
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <Link className="btn ghost" to={`/traces/${t.id}`} style={{ padding: "3px 10px", fontSize: 12, marginRight: 6 }}>
-                      查看
-                    </Link>
-                    {pruneAvailable ? (
-                      <button
-                        className="icon-btn"
-                        title="删除此 trace"
-                        disabled={delMutation.isPending}
-                        onClick={() => deleteOne(t.id, t.name)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="pager">
-            <button className="btn ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>
-              上一页
-            </button>
-            <span className="mono">
-              {page + 1} / {totalPages} · 共 {data.total} 条
-            </span>
-            <button className="btn ghost" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>
-              下一页
-            </button>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
