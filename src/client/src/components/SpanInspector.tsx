@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchSpan, type Span } from "../api/observe";
 import { ErrorBox, Spin, StatusBadge, fmtMs } from "./Atoms";
@@ -216,17 +216,19 @@ function KnownSections({ attributes }: { attributes: Record<string, unknown> }) 
   );
 }
 
-/** span 属性面板：lite spans 时按需拉取完整 attributes；支持关闭。 */
+/** span 属性面板：lite spans 时按需拉取完整 attributes；docked 时嵌入右侧工作区。 */
 export function SpanInspector({
   span,
   traceId,
   spansLite = false,
   onClose,
+  docked = false,
 }: {
   span: Span;
   traceId?: string;
   spansLite?: boolean;
   onClose?: () => void;
+  docked?: boolean;
 }) {
   const needFetch = Boolean(traceId) && spansLite;
   const full = useQuery({
@@ -247,12 +249,8 @@ export function SpanInspector({
       ? `in ${String(inputTokens ?? 0)} / out ${String(outputTokens ?? 0)}`
       : null;
 
-  useEffect(() => {
-    document.getElementById("span-inspector")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [span.id]);
-
   return (
-    <div className="card" id="span-inspector">
+    <div className={docked ? "span-inspector docked" : "card span-inspector"} id="span-inspector">
       <div className="span-inspector-head">
         <span className="badge neutral">{resolved.phase ?? "span"}</span>
         <span className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{resolved.name}</span>

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { MousePointerClick, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { deleteTrace, fetchTrace, type Span } from "../api/observe";
@@ -56,7 +56,7 @@ export function TraceDetail() {
     (executionSummary.requirement != null || executionSummary.output != null);
 
   return (
-    <>
+    <div className="detail-page">
       <PageHeader
         title={<span className="mono">{trace.name}</span>}
         subtitle={
@@ -64,6 +64,7 @@ export function TraceDetail() {
             <CopyId value={trace.id} />
             <StatusBadge status={trace.status} />
             <span>{fmtMs(trace.durationMs)}</span>
+            <span>{fmtTokens(tokens)} tok</span>
           </span>
         }
         backTo="/traces"
@@ -76,80 +77,100 @@ export function TraceDetail() {
         }
       />
 
-      <div className="card">
-        <h2>Trace 元信息</h2>
-        <dl className="kv">
-          <dt>startedAt</dt>
-          <dd>{trace.startedAt}</dd>
-          <dt>endedAt</dt>
-          <dd>{trace.endedAt ?? "—"}</dd>
-          <dt>attributes</dt>
-          <dd>{JSON.stringify(trace.attributes)}</dd>
-          <dt>token（cost 汇总）</dt>
-          <dd>{fmtTokens(tokens)}</dd>
-        </dl>
-        <div className="detail-ids">
-          <span>
-            <b>sessionId</b>{" "}
-            <Link to={`/traces?sessionId=${trace.sessionId}`}>{trace.sessionId}</Link>
-          </span>
-          <span>
-            <b>executionId</b>{" "}
-            {trace.executionId ? <Link to={`/executions/${trace.executionId}`}>{trace.executionId}</Link> : "—"}
-          </span>
-          <span>
-            <b>userId</b> {trace.userId}
-          </span>
-          <span>
-            <b>traceSessionId</b> {trace.traceSessionId}
+      <div className="meta-strip">
+        <div className="meta-chip">
+          <span className="meta-k">started</span>
+          <span className="meta-v mono">{fmtTime(trace.startedAt)}</span>
+        </div>
+        <div className="meta-chip">
+          <span className="meta-k">ended</span>
+          <span className="meta-v mono">{trace.endedAt ? fmtTime(trace.endedAt) : "—"}</span>
+        </div>
+        <div className="meta-chip">
+          <span className="meta-k">session</span>
+          <Link className="meta-v mono" to={`/traces?sessionId=${trace.sessionId}`}>
+            {trace.sessionId.slice(0, 14)}…
+          </Link>
+        </div>
+        <div className="meta-chip">
+          <span className="meta-k">execution</span>
+          {trace.executionId ? (
+            <Link className="meta-v mono" to={`/executions/${trace.executionId}`}>
+              {trace.executionId.slice(0, 14)}…
+            </Link>
+          ) : (
+            <span className="meta-v mono">—</span>
+          )}
+        </div>
+        <div className="meta-chip">
+          <span className="meta-k">user</span>
+          <span className="meta-v mono" title={trace.userId}>
+            {trace.userId.slice(0, 10)}…
           </span>
         </div>
-      </div>
-
-      {hasSummary ? (
-        <div className="card">
-          <h2>请求与 Agent 输出</h2>
-          <dl className="kv">
-            <dt>requirement</dt>
-            <dd>
-              <div className="output-box" style={{ maxHeight: 160 }}>
-                {String(executionSummary.requirement ?? "—")}
-              </div>
-            </dd>
-            <dt>agent 输出</dt>
-            <dd>
-              <div className="output-box result">
-                {String(executionSummary.output ?? "（无输出）")}
-              </div>
-            </dd>
-          </dl>
-        </div>
-      ) : null}
-
-      <div className="card">
-        <h2>
-          Span 瀑布图（{spans.length}）
-          {selected ? <span className="muted" style={{ textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>· 已选中 span，下方展开详情</span> : null}
-        </h2>
-        <Waterfall spans={spans} selectedId={selected?.id ?? null} onSelect={setSelected} />
-        {!selected && spans.length > 0 ? (
-          <div className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
-            点击任意 span 行按需加载入参 / 出参 / 思考过程
-          </div>
+        {Object.keys(trace.attributes).length > 0 ? (
+          <details className="meta-attrs">
+            <summary>attributes</summary>
+            <pre className="raw-json">{JSON.stringify(trace.attributes, null, 2)}</pre>
+          </details>
         ) : null}
       </div>
 
-      {selected ? (
-        <SpanInspector
-          span={selected}
-          traceId={trace.id}
-          spansLite={spansLite}
-          onClose={() => setSelected(null)}
-        />
+      {hasSummary ? (
+        <div className="io-strip">
+          <details className="io-panel">
+            <summary>请求 requirement</summary>
+            <div className="output-box" style={{ maxHeight: 140, marginTop: 8 }}>
+              {String(executionSummary.requirement ?? "—")}
+            </div>
+          </details>
+          <details className="io-panel">
+            <summary>Agent 输出</summary>
+            <div className="output-box result" style={{ maxHeight: 140, marginTop: 8 }}>
+              {String(executionSummary.output ?? "（无输出）")}
+            </div>
+          </details>
+        </div>
       ) : null}
 
-      <div className="two-col">
-        <div className="card">
+      <div className="trace-workspace">
+        <section className="trace-pane spans" aria-label="Span 瀑布图">
+          <div className="pane-head">
+            <h2>Spans · {spans.length}</h2>
+          </div>
+          <div className="pane-body">
+            <Waterfall spans={spans} selectedId={selected?.id ?? null} onSelect={setSelected} />
+          </div>
+        </section>
+
+        <section className="trace-pane inspector" aria-label="Span 详情">
+          <div className="pane-head">
+            <h2>Inspector</h2>
+          </div>
+          <div className="pane-body">
+            {selected ? (
+              <SpanInspector
+                span={selected}
+                traceId={trace.id}
+                spansLite={spansLite}
+                onClose={() => setSelected(null)}
+                docked
+              />
+            ) : (
+              <div className="inspector-empty">
+                <div className="empty-icon">
+                  <MousePointerClick size={18} />
+                </div>
+                <div className="empty-title">选择左侧 span</div>
+                <div className="empty-hint">点击瀑布图中的任意一行，在此查看入参、出参与思考过程</div>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="detail-secondary two-col">
+        <div className="card" style={{ marginBottom: 0 }}>
           <h2>Cost 明细（{data.costRows.length}）</h2>
           {data.costRows.length === 0 ? (
             <Empty text="无 cost 记录" />
@@ -179,7 +200,7 @@ export function TraceDetail() {
           )}
         </div>
 
-        <div className="card">
+        <div className="card" style={{ marginBottom: 0 }}>
           <h2>审计事件（{data.auditRows.length}）</h2>
           {data.auditRows.length === 0 ? (
             <Empty text="无审计记录" />
@@ -214,6 +235,6 @@ export function TraceDetail() {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
