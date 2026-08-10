@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { deleteTrace, fetchExecution, fetchTrace, type Span } from "../api/observe";
 import {
+  CopyId,
   Empty,
   ErrorBox,
   Spin,
@@ -28,7 +29,6 @@ export function TraceDetail() {
     queryFn: () => fetchTrace(id),
   });
 
-  // 关联 execution：展示请求需求与 agent 最终输出
   const executionId = data?.trace.executionId ?? null;
   const exec = useQuery({
     queryKey: ["trace-execution", executionId],
@@ -52,9 +52,9 @@ export function TraceDetail() {
     await delMutation.mutateAsync();
   };
 
-  if (isLoading) return <Spin />;
+  if (isLoading) return <Spin label="加载 Trace 详情…" />;
   if (error) return <ErrorBox error={error} />;
-  if (!data) return <Empty text="Trace 不存在" />;
+  if (!data) return <Empty text="Trace 不存在" hint="可能已被清理，或 ID 不正确" />;
 
   const { trace, spans } = data;
   const tokens = data.costRows.reduce((a, c) => a + c.inputTokens + c.outputTokens, 0);
@@ -63,31 +63,49 @@ export function TraceDetail() {
     <>
       <PageHeader
         title={<span className="mono">{trace.name}</span>}
-        subtitle={(
-          <span className="mono" style={{ fontSize: 12 }}>
-            {trace.id} · <StatusBadge status={trace.status} /> · {fmtMs(trace.durationMs)}
+        subtitle={
+          <span className="mono" style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <CopyId value={trace.id} />
+            <StatusBadge status={trace.status} />
+            <span>{fmtMs(trace.durationMs)}</span>
           </span>
-        )}
+        }
+        backTo="/traces"
+        backLabel="返回 Trace 列表"
+        actions={
+          <button className="icon-btn" title="删除此 trace" disabled={delMutation.isPending} onClick={confirmDelete}>
+            <Trash2 size={14} />
+            {delMutation.isPending ? "删除中…" : "删除"}
+          </button>
+        }
       />
 
       <div className="card">
         <h2>Trace 元信息</h2>
         <dl className="kv">
-          <dt>startedAt</dt><dd>{trace.startedAt}</dd>
-          <dt>endedAt</dt><dd>{trace.endedAt ?? "—"}</dd>
-          <dt>attributes</dt><dd>{JSON.stringify(trace.attributes)}</dd>
-          <dt>token（cost 汇总）</dt><dd>{fmtTokens(tokens)}</dd>
+          <dt>startedAt</dt>
+          <dd>{trace.startedAt}</dd>
+          <dt>endedAt</dt>
+          <dd>{trace.endedAt ?? "—"}</dd>
+          <dt>attributes</dt>
+          <dd>{JSON.stringify(trace.attributes)}</dd>
+          <dt>token（cost 汇总）</dt>
+          <dd>{fmtTokens(tokens)}</dd>
         </dl>
         <div className="detail-ids">
-          <span><b>sessionId</b> <Link to={`/traces?sessionId=${trace.sessionId}`}>{trace.sessionId}</Link></span>
-          <span><b>executionId</b> {trace.executionId ? <Link to={`/executions/${trace.executionId}`}>{trace.executionId}</Link> : "—"}</span>
-          <span><b>userId</b> {trace.userId}</span>
-          <span><b>traceSessionId</b> {trace.traceSessionId}</span>
-          <span style={{ marginLeft: "auto" }}>
-            <button className="icon-btn" title="删除此 trace" disabled={delMutation.isPending} onClick={confirmDelete}>
-              <Trash2 size={14} />
-              {delMutation.isPending ? "删除中…" : "删除"}
-            </button>
+          <span>
+            <b>sessionId</b>{" "}
+            <Link to={`/traces?sessionId=${trace.sessionId}`}>{trace.sessionId}</Link>
+          </span>
+          <span>
+            <b>executionId</b>{" "}
+            {trace.executionId ? <Link to={`/executions/${trace.executionId}`}>{trace.executionId}</Link> : "—"}
+          </span>
+          <span>
+            <b>userId</b> {trace.userId}
+          </span>
+          <span>
+            <b>traceSessionId</b> {trace.traceSessionId}
           </span>
         </div>
       </div>
@@ -113,21 +131,35 @@ export function TraceDetail() {
       ) : null}
 
       <div className="card">
-        <h2>Span 瀑布图（{spans.length} 个 span）</h2>
+        <h2>
+          Span 瀑布图（{spans.length}）
+          {selected ? <span className="muted" style={{ textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>· 已选中 span，下方展开详情</span> : null}
+        </h2>
         <Waterfall spans={spans} selectedId={selected?.id ?? null} onSelect={setSelected} />
+        {!selected && spans.length > 0 ? (
+          <div className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
+            点击任意 span 行查看入参 / 出参 / 思考过程
+          </div>
+        ) : null}
       </div>
 
-      {selected ? <SpanInspector span={selected} /> : null}
+      {selected ? <SpanInspector span={selected} onClose={() => setSelected(null)} /> : null}
 
       <div className="two-col">
         <div className="card">
-          <h2>Cost 明细（{data.costRows.length} 行）</h2>
+          <h2>Cost 明细（{data.costRows.length}）</h2>
           {data.costRows.length === 0 ? (
             <Empty text="无 cost 记录" />
           ) : (
             <table className="data">
               <thead>
-                <tr><th>agent</th><th>model</th><th className="num">in</th><th className="num">out</th><th className="num">cost</th></tr>
+                <tr>
+                  <th>agent</th>
+                  <th>model</th>
+                  <th className="num">in</th>
+                  <th className="num">out</th>
+                  <th className="num">cost</th>
+                </tr>
               </thead>
               <tbody>
                 {data.costRows.map((c, i) => (
@@ -145,21 +177,33 @@ export function TraceDetail() {
         </div>
 
         <div className="card">
-          <h2>审计事件（{data.auditRows.length} 条）</h2>
+          <h2>审计事件（{data.auditRows.length}）</h2>
           {data.auditRows.length === 0 ? (
             <Empty text="无审计记录" />
           ) : (
             <table className="data">
               <thead>
-                <tr><th>时间</th><th>action</th><th>outcome</th><th>resource</th></tr>
+                <tr>
+                  <th>时间</th>
+                  <th>action</th>
+                  <th>outcome</th>
+                  <th>resource</th>
+                </tr>
               </thead>
               <tbody>
                 {data.auditRows.map((a, i) => (
                   <tr key={i}>
                     <td className="mono">{fmtTime(a.createdAt)}</td>
                     <td className="mono">{a.action}</td>
-                    <td><StatusBadge status={a.outcome === "success" ? "ok" : a.outcome === "denied" ? "error" : "unset"} /></td>
-                    <td className="mono">{a.resourceType ?? "—"}{a.resourceId ? `:${a.resourceId.slice(0, 14)}` : ""}</td>
+                    <td>
+                      <StatusBadge
+                        status={a.outcome === "success" ? "ok" : a.outcome === "denied" ? "error" : "unset"}
+                      />
+                    </td>
+                    <td className="mono">
+                      {a.resourceType ?? "—"}
+                      {a.resourceId ? `:${a.resourceId.slice(0, 14)}` : ""}
+                    </td>
                   </tr>
                 ))}
               </tbody>
