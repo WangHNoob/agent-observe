@@ -81,6 +81,13 @@ export interface TraceDetail {
     createdAt: string;
   };
   spans: SpanRow[];
+  /** spans 是否省略了完整 attributes（需按 span 懒加载） */
+  spansLite: boolean;
+  /** 关联 execution 的轻量摘要（避免二次拉全量 DAG） */
+  executionSummary: {
+    requirement: string | null;
+    output: string | null;
+  } | null;
   costRows: CostRow[];
   auditRows: AuditRow[];
 }
@@ -185,7 +192,11 @@ export class TraceService {
     };
   }
 
-  async getTraceDetail(traceId: string): Promise<TraceDetail | null> {
+  async getTraceDetail(
+    traceId: string,
+    opts: { fullAttributes?: boolean } = {},
+  ): Promise<TraceDetail | null> {
+    const fullAttributes = opts.fullAttributes === true;
     const traceResult = await this.db.query(
       `SELECT id, user_id AS "userId", trace_session_id AS "traceSessionId",
               session_id AS "sessionId", execution_id AS "executionId",
@@ -199,10 +210,19 @@ export class TraceService {
     const traceRow = traceResult.rows[0] as pg.QueryResultRow | undefined;
     if (!traceRow) return null;
 
-    const [spans, costRows, auditRows] = await Promise.all([
+    const executionId = (traceRow.executionId as string | null) ?? null;
+    const spanAttrsSelect = fullAttributes
+      ? "attributes"
+      : `jsonb_strip_nulls(jsonb_build_object(
+           'inputTokens', attributes->'inputTokens',
+           'outputTokens', attributes->'outputTokens'
+         )) AS attributes`;
+
+    const [spans, costRows, auditRows, execSummary] = await Promise.all([
       this.db.query(
         `SELECT id, parent_span_id AS "parentSpanId", name, phase, kind, status,
-                attributes, started_at AS "startedAt", ended_at AS "endedAt",
+                ${spanAttrsSelect},
+                started_at AS "startedAt", ended_at AS "endedAt",
                 EXTRACT(EPOCH FROM (ended_at - started_at)) * 1000 AS "durationMs"
          FROM agent_spans WHERE trace_id = $1
          ORDER BY started_at, created_at`,
@@ -221,7 +241,17 @@ export class TraceService {
          FROM audit_logs WHERE trace_id = $1 ORDER BY created_at`,
         [traceId],
       ),
+      executionId
+        ? this.db.query(
+            `SELECT request_payload->>'requirement' AS requirement,
+                    result_payload->>'output' AS output
+             FROM executions WHERE id = $1`,
+            [executionId],
+          )
+        : Promise.resolve(null),
     ]);
+
+    const summaryRow = execSummary?.rows[0] as pg.QueryResultRow | undefined;
 
     return {
       trace: {
@@ -229,7 +259,7 @@ export class TraceService {
         userId: traceRow.userId as string,
         traceSessionId: traceRow.traceSessionId as string,
         sessionId: traceRow.sessionId as string,
-        executionId: (traceRow.executionId as string | null) ?? null,
+        executionId,
         name: traceRow.name as string,
         status: traceRow.status as string,
         attributes: (traceRow.attributes as Record<string, unknown>) ?? {},
@@ -238,18 +268,14 @@ export class TraceService {
         durationMs: traceRow.durationMs != null ? Number(traceRow.durationMs) : null,
         createdAt: traceRow.createdAt as string,
       },
-      spans: spans.rows.map((r) => ({
-        id: r.id as string,
-        parentSpanId: (r.parentSpanId as string | null) ?? null,
-        name: r.name as string,
-        phase: (r.phase as string | null) ?? null,
-        kind: r.kind as string,
-        status: r.status as string,
-        attributes: (r.attributes as Record<string, unknown>) ?? {},
-        startedAt: r.startedAt as string,
-        endedAt: r.endedAt as string,
-        durationMs: Number(r.durationMs ?? 0),
-      })),
+      spans: spans.rows.map(rowToSpan),
+      spansLite: !fullAttributes,
+      executionSummary: summaryRow
+        ? {
+            requirement: (summaryRow.requirement as string | null) ?? null,
+            output: (summaryRow.output as string | null) ?? null,
+          }
+        : null,
       costRows: costRows.rows.map((r) => ({
         agentName: (r.agentName as string | null) ?? null,
         modelName: (r.modelName as string | null) ?? null,
@@ -267,6 +293,33 @@ export class TraceService {
         createdAt: r.createdAt as string,
       })),
     };
+  }
+
+  /** 按需拉取单个 span 的完整 attributes（瀑布图点击后）。 */
+  async getSpan(traceId: string, spanId: string): Promise<SpanRow | null> {
+    const result = await this.db.query(
+      `SELECT id, parent_span_id AS "parentSpanId", name, phase, kind, status,
+              attributes, started_at AS "startedAt", ended_at AS "endedAt",
+              EXTRACT(EPOCH FROM (ended_at - started_at)) * 1000 AS "durationMs"
+       FROM agent_spans WHERE trace_id = $1 AND id = $2`,
+      [traceId, spanId],
+    );
+    const row = result.rows[0] as pg.QueryResultRow | undefined;
+    return row ? rowToSpan(row) : null;
+  }
+
+  /** 按 executionId 取最近一条 trace（lite spans），供 Execution 详情一次返回。 */
+  async getPrimaryTraceByExecution(executionId: string): Promise<TraceDetail | null> {
+    const found = await this.db.query(
+      `SELECT id FROM agent_traces
+       WHERE execution_id = $1
+       ORDER BY started_at DESC
+       LIMIT 1`,
+      [executionId],
+    );
+    const id = found.rows[0]?.id as string | undefined;
+    if (!id) return null;
+    return this.getTraceDetail(id);
   }
 
   // ─── 管理操作（obs_manager，事务内执行） ───────────────────────────────
@@ -356,5 +409,20 @@ function rowToListItem(r: pg.QueryResultRow): TraceListItem {
     inputTokens: Number(r.inputTokens ?? 0),
     outputTokens: Number(r.outputTokens ?? 0),
     costRows: Number(r.costRows ?? 0),
+  };
+}
+
+function rowToSpan(r: pg.QueryResultRow): SpanRow {
+  return {
+    id: r.id as string,
+    parentSpanId: (r.parentSpanId as string | null) ?? null,
+    name: r.name as string,
+    phase: (r.phase as string | null) ?? null,
+    kind: r.kind as string,
+    status: r.status as string,
+    attributes: (r.attributes as Record<string, unknown>) ?? {},
+    startedAt: r.startedAt as string,
+    endedAt: r.endedAt as string,
+    durationMs: Number(r.durationMs ?? 0),
   };
 }
