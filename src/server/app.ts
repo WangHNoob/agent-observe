@@ -66,6 +66,16 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   app.get("/api/health", async () => ({ ok: true }));
 
+  // 轻量元信息（无 DB）：TraceList 只需保留策略，不必拉完整 overview
+  app.get(
+    "/api/meta",
+    { preHandler: authenticate },
+    async () => ({
+      retentionDays: config.traceRetentionDays,
+      pruneAvailable: managerDb != null,
+    }),
+  );
+
   await app.register(authRoutes, { ctx });
   await app.register(overviewRoutes, { ctx });
   await app.register(tracesRoutes, { ctx });

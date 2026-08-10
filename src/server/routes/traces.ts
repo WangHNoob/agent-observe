@@ -68,11 +68,30 @@ export async function tracesRoutes(
       if (!ID_PATTERN.test(id)) {
         return reply.code(400).send({ error: "Invalid traceId" });
       }
-      const detail = await opts.ctx.traceService.getTraceDetail(id);
+      const q = req.query as { full?: string };
+      const detail = await opts.ctx.traceService.getTraceDetail(id, {
+        fullAttributes: q.full === "1" || q.full === "true",
+      });
       if (!detail) {
         return reply.code(404).send({ error: "Trace not found" });
       }
       return detail;
+    },
+  );
+
+  app.get(
+    "/api/traces/:id/spans/:spanId",
+    { preHandler: opts.ctx.authenticate },
+    async (req, reply) => {
+      const { id, spanId } = req.params as { id: string; spanId: string };
+      if (!ID_PATTERN.test(id) || !ID_PATTERN.test(spanId)) {
+        return reply.code(400).send({ error: "Invalid id" });
+      }
+      const span = await opts.ctx.traceService.getSpan(id, spanId);
+      if (!span) {
+        return reply.code(404).send({ error: "Span not found" });
+      }
+      return span;
     },
   );
 

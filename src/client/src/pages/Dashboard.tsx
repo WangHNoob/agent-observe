@@ -12,6 +12,7 @@ export function Dashboard() {
     queryKey: ["overview"],
     queryFn: fetchOverview,
     refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 
   if (isLoading) return <Spin label="拉取总览指标…" />;

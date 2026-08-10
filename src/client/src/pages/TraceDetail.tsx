@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { deleteTrace, fetchExecution, fetchTrace, type Span } from "../api/observe";
+import { deleteTrace, fetchTrace, type Span } from "../api/observe";
 import {
   CopyId,
   Empty,
@@ -29,13 +29,6 @@ export function TraceDetail() {
     queryFn: () => fetchTrace(id),
   });
 
-  const executionId = data?.trace.executionId ?? null;
-  const exec = useQuery({
-    queryKey: ["trace-execution", executionId],
-    queryFn: () => fetchExecution(executionId!),
-    enabled: executionId != null,
-  });
-
   const delMutation = useMutation({
     mutationFn: () => deleteTrace(id),
     onSuccess: () => {
@@ -56,8 +49,11 @@ export function TraceDetail() {
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Empty text="Trace 不存在" hint="可能已被清理，或 ID 不正确" />;
 
-  const { trace, spans } = data;
+  const { trace, spans, executionSummary, spansLite } = data;
   const tokens = data.costRows.reduce((a, c) => a + c.inputTokens + c.outputTokens, 0);
+  const hasSummary =
+    executionSummary &&
+    (executionSummary.requirement != null || executionSummary.output != null);
 
   return (
     <>
@@ -110,20 +106,20 @@ export function TraceDetail() {
         </div>
       </div>
 
-      {exec.data ? (
+      {hasSummary ? (
         <div className="card">
           <h2>请求与 Agent 输出</h2>
           <dl className="kv">
             <dt>requirement</dt>
             <dd>
               <div className="output-box" style={{ maxHeight: 160 }}>
-                {String(exec.data.execution.requestPayload?.requirement ?? "—")}
+                {String(executionSummary.requirement ?? "—")}
               </div>
             </dd>
             <dt>agent 输出</dt>
             <dd>
               <div className="output-box result">
-                {String(exec.data.execution.resultPayload?.output ?? "（无输出）")}
+                {String(executionSummary.output ?? "（无输出）")}
               </div>
             </dd>
           </dl>
@@ -138,12 +134,19 @@ export function TraceDetail() {
         <Waterfall spans={spans} selectedId={selected?.id ?? null} onSelect={setSelected} />
         {!selected && spans.length > 0 ? (
           <div className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
-            点击任意 span 行查看入参 / 出参 / 思考过程
+            点击任意 span 行按需加载入参 / 出参 / 思考过程
           </div>
         ) : null}
       </div>
 
-      {selected ? <SpanInspector span={selected} onClose={() => setSelected(null)} /> : null}
+      {selected ? (
+        <SpanInspector
+          span={selected}
+          traceId={trace.id}
+          spansLite={spansLite}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
 
       <div className="two-col">
         <div className="card">
@@ -163,7 +166,7 @@ export function TraceDetail() {
               </thead>
               <tbody>
                 {data.costRows.map((c, i) => (
-                  <tr key={i}>
+                  <tr key={`${c.agentName}-${c.modelName}-${c.createdAt}-${i}`}>
                     <td>{c.agentName ?? "—"}</td>
                     <td className="mono">{c.modelName ?? "—"}</td>
                     <td className="num">{fmtTokens(c.inputTokens)}</td>
@@ -192,7 +195,7 @@ export function TraceDetail() {
               </thead>
               <tbody>
                 {data.auditRows.map((a, i) => (
-                  <tr key={i}>
+                  <tr key={`${a.action}-${a.createdAt}-${i}`}>
                     <td className="mono">{fmtTime(a.createdAt)}</td>
                     <td className="mono">{a.action}</td>
                     <td>

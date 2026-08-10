@@ -115,8 +115,35 @@ describe("traces", () => {
     const detail = res.json();
     expect(detail.trace.id).toBe(id);
     expect(Array.isArray(detail.spans)).toBe(true);
+    expect(detail.spansLite).toBe(true);
     expect(Array.isArray(detail.costRows)).toBe(true);
     expect(Array.isArray(detail.auditRows)).toBe(true);
+    expect("executionSummary" in detail).toBe(true);
+
+    if (detail.spans.length > 0) {
+      const spanId = detail.spans[0].id;
+      const spanRes = await app.inject({
+        method: "GET",
+        url: `/api/traces/${id}/spans/${spanId}`,
+        headers: auth(token),
+      });
+      expect(spanRes.statusCode).toBe(200);
+      const span = spanRes.json();
+      expect(span.id).toBe(spanId);
+      expect(span.attributes).toBeTypeOf("object");
+    }
+  });
+
+  it("returns 404 for unknown span", async () => {
+    const list = await app.inject({ method: "GET", url: "/api/traces?limit=1", headers: auth(token) });
+    const id = list.json().items[0]?.id;
+    if (!id) return;
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/traces/${id}/spans/definitely-not-a-span`,
+      headers: auth(token),
+    });
+    expect(res.statusCode).toBe(404);
   });
 
   it("returns 404 for unknown trace id", async () => {
@@ -155,6 +182,21 @@ describe("overview", () => {
   });
 });
 
+describe("meta", () => {
+  it("returns retention flags without heavy aggregation", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/meta", headers: auth(token) });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(typeof body.retentionDays).toBe("number");
+    expect(typeof body.pruneAvailable).toBe("boolean");
+  });
+
+  it("requires auth", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/meta" });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
 describe("executions", () => {
   it("returns 404 for unknown execution", async () => {
     const res = await app.inject({
@@ -175,13 +217,17 @@ describe("executions", () => {
     if (!withExec) return; // 无带 executionId 的 trace 时跳过
     const res = await app.inject({
       method: "GET",
-      url: `/api/executions/${withExec.executionId}`,
+      url: `/api/executions/${withExec.executionId}?include=primaryTrace`,
       headers: auth(token),
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.execution.id).toBe(withExec.executionId);
     expect(Array.isArray(body.tasks)).toBe(true);
+    expect(body.primaryTrace == null || body.primaryTrace.trace.id).toBeTruthy();
+    if (body.primaryTrace) {
+      expect(body.primaryTrace.spansLite).toBe(true);
+    }
   });
 });
 

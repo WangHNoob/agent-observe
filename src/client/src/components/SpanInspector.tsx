@@ -1,6 +1,7 @@
-import { useEffect } from "react";
-import type { Span } from "../api/observe";
-import { StatusBadge, fmtMs } from "./Atoms";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { fetchSpan, type Span } from "../api/observe";
+import { ErrorBox, Spin, StatusBadge, fmtMs } from "./Atoms";
 
 /** 转义 + JSON 语法着色（键/字符串/数字/布尔），返回 HTML 片段。 */
 function jsonHighlight(raw: string): string {
@@ -23,18 +24,31 @@ function jsonHighlight(raw: string): string {
 }
 
 function RawJson({ value }: { value: string }) {
+  const [open, setOpen] = useState(false);
+  const html = useMemo(() => (open ? jsonHighlight(value) : ""), [open, value]);
+
   return (
-    <details className="collapse">
+    <details
+      className="collapse"
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
       <summary>查看原始 JSON（{value.length.toLocaleString()} 字符）</summary>
-      <pre className="raw-json" dangerouslySetInnerHTML={{ __html: jsonHighlight(value) }} />
+      {open ? (
+        value.length > 80_000 ? (
+          <pre className="raw-json">{value}</pre>
+        ) : (
+          <pre className="raw-json" dangerouslySetInnerHTML={{ __html: html }} />
+        )
+      ) : null}
     </details>
   );
 }
 
-/** 对象数组 → HTML 表格（列取首行键，表头吸顶）。 */
+/** 对象数组 → HTML 表格（列取首行键，表头吸顶）。大结果截断避免卡顿。 */
 function RowsTable({ rows, title }: { rows: Record<string, unknown>[]; title?: string }) {
   const keys = rows.length > 0 ? Object.keys(rows[0]!) : [];
   if (keys.length === 0) return <div className="muted">（空）</div>;
+  const shown = rows.slice(0, 100);
   return (
     <div style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto" }}>
       {title ? <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{title}</div> : null}
@@ -45,7 +59,7 @@ function RowsTable({ rows, title }: { rows: Record<string, unknown>[]; title?: s
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
+          {shown.map((row, i) => (
             <tr key={i}>
               {keys.map((k) => (
                 <td key={k} className="mono" style={{ fontSize: 12 }}>{String(row[k] ?? "")}</td>
@@ -54,6 +68,11 @@ function RowsTable({ rows, title }: { rows: Record<string, unknown>[]; title?: s
           ))}
         </tbody>
       </table>
+      {rows.length > shown.length ? (
+        <div className="muted" style={{ fontSize: 12, padding: "6px 0" }}>
+          仅展示前 {shown.length} / {rows.length} 行（完整数据见原始 JSON）
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -75,7 +94,6 @@ function ToolResultView({ value }: { value: string }) {
   const obj = parsed as Record<string, unknown>;
   const result = obj?.result as Record<string, unknown> | undefined;
 
-  // 表格形状：result.rows 为对象数组
   if (Array.isArray(result?.rows) && result.rows.length > 0) {
     const rows = result.rows as Record<string, unknown>[];
     return (
@@ -93,7 +111,6 @@ function ToolResultView({ value }: { value: string }) {
     );
   }
 
-  // 搜索命中：result.hits
   if (Array.isArray(result?.hits)) {
     const hits = result.hits as Record<string, unknown>[];
     return (
@@ -119,7 +136,6 @@ function ToolResultView({ value }: { value: string }) {
     );
   }
 
-  // 文档内容：result.content / text
   const content = result?.content ?? result?.text;
   if (typeof content === "string" && content.length > 0) {
     return (
@@ -134,7 +150,6 @@ function ToolResultView({ value }: { value: string }) {
     );
   }
 
-  // 其他：pretty JSON + 原始
   return (
     <>
       <div className="output-box">{JSON.stringify(parsed, null, 2)}</div>
@@ -201,10 +216,32 @@ function KnownSections({ attributes }: { attributes: Record<string, unknown> }) 
   );
 }
 
-/** span 属性面板（瀑布图点击后展示），trace 详情与执行详情共用。 */
-export function SpanInspector({ span, onClose }: { span: Span; onClose?: () => void }) {
+/** span 属性面板：lite spans 时按需拉取完整 attributes；支持关闭。 */
+export function SpanInspector({
+  span,
+  traceId,
+  spansLite = false,
+  onClose,
+}: {
+  span: Span;
+  traceId?: string;
+  spansLite?: boolean;
+  onClose?: () => void;
+}) {
+  const needFetch = Boolean(traceId) && spansLite;
+  const full = useQuery({
+    queryKey: ["span", traceId, span.id],
+    queryFn: () => fetchSpan(traceId!, span.id),
+    enabled: needFetch,
+    staleTime: 60_000,
+  });
+
+  const resolved = full.data ?? span;
+  const loading = needFetch && full.isLoading;
+  const fetchError = needFetch ? full.error : null;
+
   const { toolArguments, toolResult, llmReasoning, llmOutput, inputTokens, outputTokens, ...rest } =
-    span.attributes;
+    resolved.attributes;
   const tokenLine =
     inputTokens != null || outputTokens != null
       ? `in ${String(inputTokens ?? 0)} / out ${String(outputTokens ?? 0)}`
@@ -217,11 +254,11 @@ export function SpanInspector({ span, onClose }: { span: Span; onClose?: () => v
   return (
     <div className="card" id="span-inspector">
       <div className="span-inspector-head">
-        <span className="badge neutral">{span.phase ?? "span"}</span>
-        <span className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{span.name}</span>
-        <StatusBadge status={span.status} />
+        <span className="badge neutral">{resolved.phase ?? "span"}</span>
+        <span className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{resolved.name}</span>
+        <StatusBadge status={resolved.status} />
         <span className="mono muted" style={{ marginLeft: "auto", fontSize: 12 }}>
-          {fmtMs(span.durationMs)}
+          {fmtMs(resolved.durationMs)}
           {tokenLine ? ` · ${tokenLine}` : ""}
         </span>
         {onClose ? (
@@ -230,14 +267,20 @@ export function SpanInspector({ span, onClose }: { span: Span; onClose?: () => v
           </button>
         ) : null}
       </div>
-      <KnownSections attributes={span.attributes} />
-      {Object.keys(rest).length > 0 ? (
+      {loading ? <Spin label="加载 span 属性…" /> : null}
+      {fetchError ? <ErrorBox error={fetchError} /> : null}
+      {!loading && !fetchError ? (
         <>
-          <div className="section-label" style={{ marginTop: 10 }}>其他属性</div>
-          <details className="collapse">
-            <summary>查看其他属性（{Object.keys(rest).length} 项）</summary>
-            <pre className="raw-json" dangerouslySetInnerHTML={{ __html: jsonHighlight(JSON.stringify(rest, null, 2)) }} />
-          </details>
+          <KnownSections attributes={resolved.attributes} />
+          {Object.keys(rest).length > 0 ? (
+            <>
+              <div className="section-label" style={{ marginTop: 10 }}>其他属性</div>
+              <details className="collapse">
+                <summary>查看其他属性（{Object.keys(rest).length} 项）</summary>
+                <RawJson value={JSON.stringify(rest, null, 2)} />
+              </details>
+            </>
+          ) : null}
         </>
       ) : null}
     </div>

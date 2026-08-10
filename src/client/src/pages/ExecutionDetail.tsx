@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchExecution, fetchTrace, fetchTraces, type Span } from "../api/observe";
+import { fetchExecution, type Span } from "../api/observe";
 import { CopyId, Empty, ErrorBox, Spin, StatusBadge, fmtTime } from "../components/Atoms";
 import { PageHeader } from "../components/Layout";
 import { SpanInspector } from "../components/SpanInspector";
@@ -11,27 +11,17 @@ export function ExecutionDetail() {
   const { id = "" } = useParams();
   const [selected, setSelected] = useState<Span | null>(null);
 
+  // 一次请求：execution + 主 trace（lite spans）
   const { data, isLoading, error } = useQuery({
-    queryKey: ["execution", id],
-    queryFn: () => fetchExecution(id),
-  });
-
-  const execTraces = useQuery({
-    queryKey: ["execution-traces", id],
-    queryFn: () => fetchTraces({ executionId: id, limit: 1 }),
-  });
-  const firstTraceId = execTraces.data?.items?.[0]?.id ?? null;
-  const traceDetail = useQuery({
-    queryKey: ["execution-trace-detail", firstTraceId],
-    queryFn: () => fetchTrace(firstTraceId!),
-    enabled: firstTraceId != null,
+    queryKey: ["execution", id, "primaryTrace"],
+    queryFn: () => fetchExecution(id, { includePrimaryTrace: true }),
   });
 
   if (isLoading) return <Spin label="加载 Execution…" />;
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Empty text="Execution 不存在" hint="可能已被清理，或 ID 不正确" />;
 
-  const { execution, tasks } = data;
+  const { execution, tasks, primaryTrace } = data;
 
   return (
     <>
@@ -75,27 +65,34 @@ export function ExecutionDetail() {
         </div>
       ) : null}
 
-      {traceDetail.data ? (
+      {primaryTrace ? (
         <div className="card">
           <h2>
-            关联 Trace（{traceDetail.data.spans.length} span）
+            关联 Trace（{primaryTrace.spans.length} span）
             <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>
-              <Link to={`/traces/${traceDetail.data.trace.id}`}>打开完整详情 →</Link>
+              <Link to={`/traces/${primaryTrace.trace.id}`}>打开完整详情 →</Link>
             </span>
           </h2>
           <Waterfall
-            spans={traceDetail.data.spans}
+            spans={primaryTrace.spans}
             selectedId={selected?.id ?? null}
             onSelect={setSelected}
           />
-          {!selected ? (
+          {!selected && primaryTrace.spans.length > 0 ? (
             <div className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
-              点击 span 行查看详情
+              点击 span 行按需加载详情
             </div>
           ) : null}
         </div>
       ) : null}
-      {selected ? <SpanInspector span={selected} onClose={() => setSelected(null)} /> : null}
+      {selected && primaryTrace ? (
+        <SpanInspector
+          span={selected}
+          traceId={primaryTrace.trace.id}
+          spansLite={primaryTrace.spansLite}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
 
       <div className="card">
         <h2>任务 DAG（{tasks.length}）</h2>
