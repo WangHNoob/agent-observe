@@ -17,9 +17,7 @@ export interface OverviewData {
   modeBreakdown: { mode: string; n: number; errors: number }[];
   trend: { bucket: string; n: number; errors: number }[];
   recentErrors: { id: string; name: string; startedAt: string; durationMs: number | null }[];
-  /** trace 保留（TTL）配置 */
   retentionDays: number;
-  /** 管理功能（删除/清理）是否可用 */
   pruneAvailable: boolean;
 }
 
@@ -68,6 +66,11 @@ export interface TraceDetail {
     createdAt: string;
   };
   spans: Span[];
+  spansLite: boolean;
+  executionSummary: {
+    requirement: string | null;
+    output: string | null;
+  } | null;
   costRows: {
     agentName: string | null;
     modelName: string | null;
@@ -125,6 +128,8 @@ export interface ExecutionDetail {
       finishedAt: string | null;
     }[];
   }[];
+  /** include=primaryTrace 时附带 */
+  primaryTrace?: TraceDetail | null;
 }
 
 export interface TraceFilters {
@@ -162,12 +167,23 @@ export function fetchTraces(filters: TraceFilters): Promise<{ items: TraceListIt
   return apiFetch(`/api/traces${queryString(filters as Record<string, string | number | undefined>)}`);
 }
 
-export function fetchTrace(id: string): Promise<TraceDetail> {
-  return apiFetch(`/api/traces/${encodeURIComponent(id)}`);
+export function fetchTrace(id: string, opts?: { full?: boolean }): Promise<TraceDetail> {
+  const qs = opts?.full ? "?full=1" : "";
+  return apiFetch(`/api/traces/${encodeURIComponent(id)}${qs}`);
 }
 
-export function fetchExecution(id: string): Promise<ExecutionDetail> {
-  return apiFetch(`/api/executions/${encodeURIComponent(id)}`);
+export function fetchSpan(traceId: string, spanId: string): Promise<Span> {
+  return apiFetch(
+    `/api/traces/${encodeURIComponent(traceId)}/spans/${encodeURIComponent(spanId)}`,
+  );
+}
+
+export function fetchExecution(
+  id: string,
+  opts?: { includePrimaryTrace?: boolean },
+): Promise<ExecutionDetail> {
+  const qs = opts?.includePrimaryTrace ? "?include=primaryTrace" : "";
+  return apiFetch(`/api/executions/${encodeURIComponent(id)}${qs}`);
 }
 
 // ─── 管理（删除 / 清理；后端无 obs_manager 连接时返回 503） ──────────────

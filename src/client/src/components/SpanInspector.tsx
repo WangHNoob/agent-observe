@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import type { Span } from "../api/observe";
-import { StatusBadge, fmtMs } from "./Atoms";
+import { useQuery } from "@tanstack/react-query";
+import { fetchSpan, type Span } from "../api/observe";
+import { ErrorBox, Spin, StatusBadge, fmtMs } from "./Atoms";
 
 /** 转义 + JSON 语法着色（键/字符串/数字/布尔），返回 HTML 片段。 */
 function jsonHighlight(raw: string): string {
@@ -219,36 +220,63 @@ function KnownSections({ attributes }: { attributes: Record<string, unknown> }) 
   );
 }
 
-/** span 属性面板（瀑布图点击后展示），trace 详情与执行详情共用。 */
-export function SpanInspector({ span }: { span: Span }) {
+/** span 属性面板（瀑布图点击后展示），trace 详情与执行详情共用。
+ *  默认 spans 为 lite（仅 token 键）；传入 traceId 后按需拉完整 attributes。 */
+export function SpanInspector({
+  span,
+  traceId,
+  spansLite = false,
+}: {
+  span: Span;
+  traceId?: string;
+  spansLite?: boolean;
+}) {
+  const needFetch = Boolean(traceId) && spansLite;
+  const full = useQuery({
+    queryKey: ["span", traceId, span.id],
+    queryFn: () => fetchSpan(traceId!, span.id),
+    enabled: needFetch,
+    staleTime: 60_000,
+  });
+
+  const resolved = full.data ?? span;
+  const loading = needFetch && full.isLoading;
+  const fetchError = needFetch ? full.error : null;
+
   const { toolArguments, toolResult, llmReasoning, llmOutput, inputTokens, outputTokens, ...rest } =
-    span.attributes;
+    resolved.attributes;
   const tokenLine =
     inputTokens != null || outputTokens != null
       ? `in ${String(inputTokens ?? 0)} / out ${String(outputTokens ?? 0)}`
       : null;
 
   return (
-    <div className="card">
+    <div className="card" id="span-inspector">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        <span className="badge neutral">{span.phase ?? "span"}</span>
-        <span className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{span.name}</span>
-        <StatusBadge status={span.status} />
+        <span className="badge neutral">{resolved.phase ?? "span"}</span>
+        <span className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{resolved.name}</span>
+        <StatusBadge status={resolved.status} />
         <span className="mono muted" style={{ marginLeft: "auto", fontSize: 12 }}>
-          {fmtMs(span.durationMs)}
+          {fmtMs(resolved.durationMs)}
           {tokenLine ? ` · ${tokenLine}` : ""}
         </span>
       </div>
-      <KnownSections attributes={span.attributes} />
-      {Object.keys(rest).length > 0 ? (
+      {loading ? <Spin label="加载 span 属性…" /> : null}
+      {fetchError ? <ErrorBox error={fetchError} /> : null}
+      {!loading && !fetchError ? (
         <>
-          <div className="muted" style={{ fontSize: 11.5, letterSpacing: 0.6, margin: "10px 0 4px", textTransform: "uppercase" }}>
-            其他属性
-          </div>
-          <details className="collapse">
-            <summary>查看其他属性（{Object.keys(rest).length} 项）</summary>
-            <pre className="raw-json" dangerouslySetInnerHTML={{ __html: jsonHighlight(JSON.stringify(rest, null, 2)) }} />
-          </details>
+          <KnownSections attributes={resolved.attributes} />
+          {Object.keys(rest).length > 0 ? (
+            <>
+              <div className="muted" style={{ fontSize: 11.5, letterSpacing: 0.6, margin: "10px 0 4px", textTransform: "uppercase" }}>
+                其他属性
+              </div>
+              <details className="collapse">
+                <summary>查看其他属性（{Object.keys(rest).length} 项）</summary>
+                <RawJson value={JSON.stringify(rest, null, 2)} />
+              </details>
+            </>
+          ) : null}
         </>
       ) : null}
     </div>
