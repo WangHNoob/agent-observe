@@ -61,6 +61,12 @@ export function TraceList() {
     setSearch(next);
   };
 
+  const resetFilters = () => {
+    setDraft({});
+    setPage(0);
+    setSearch(new URLSearchParams());
+  };
+
   const totalPages = data ? Math.max(Math.ceil(data.total / PAGE_SIZE), 1) : 1;
 
   const queryClient = useQueryClient();
@@ -75,7 +81,6 @@ export function TraceList() {
     onSuccess: refresh,
   });
 
-  // ── 批量清理面板状态 ───────────────────────────────────────────
   const [pruneStatus, setPruneStatus] = useState<string>("unset");
   const [pruneDays, setPruneDays] = useState<number | "">("");
   const [preview, setPreview] = useState<number | null>(null);
@@ -85,7 +90,6 @@ export function TraceList() {
       pruneTraces(
         {
           status: pruneStatus || undefined,
-          // 留空 = 不限时间（删除全部该状态的 trace）
           to: pruneDays === "" ? undefined : daysAgoIso(pruneDays),
         },
         dryRun,
@@ -109,6 +113,10 @@ export function TraceList() {
     await delMutation.mutateAsync(id);
   };
 
+  const onFilterKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") apply();
+  };
+
   return (
     <>
       <PageHeader title="Trace 列表" subtitle="浏览 agent 全链路记录（近 → 远）" />
@@ -116,8 +124,9 @@ export function TraceList() {
       {pruneAvailable ? (
         <div className="card">
           <h2>数据保留与清理（TTL {retentionDays > 0 ? `${retentionDays} 天` : "已禁用"}）</h2>
-          <div className="filter-bar">
-            <label>状态
+          <div className="filter-bar" style={{ marginBottom: 0, boxShadow: "none", padding: 0, border: "none", background: "transparent" }}>
+            <label>
+              状态
               <select value={pruneStatus} onChange={(e) => setPruneStatus(e.target.value)}>
                 <option value="unset">unset（未完成/异常）</option>
                 <option value="ok">ok</option>
@@ -125,7 +134,8 @@ export function TraceList() {
                 <option value="">全部</option>
               </select>
             </label>
-            <label>早于
+            <label>
+              早于
               <input
                 type="number"
                 min={1}
@@ -144,8 +154,7 @@ export function TraceList() {
               <>
                 <span className="mono">匹配 {preview} 条</span>
                 <button
-                  className="btn"
-                  style={{ background: "var(--error)" }}
+                  className="btn danger"
                   disabled={pruneMutation.isPending || preview === 0}
                   onClick={() => pruneMutation.mutate(false)}
                 >
@@ -153,7 +162,7 @@ export function TraceList() {
                 </button>
               </>
             ) : null}
-            {previewMsg ? <span style={{ color: "var(--ok)" }}>{previewMsg}</span> : null}
+            {previewMsg ? <span className="toast-ok">{previewMsg}</span> : null}
           </div>
         </div>
       ) : (
@@ -165,8 +174,9 @@ export function TraceList() {
         </div>
       )}
 
-      <div className="filter-bar">
-        <label>模式
+      <div className="filter-bar" onKeyDown={onFilterKey}>
+        <label>
+          模式
           <select value={draft.mode ?? ""} onChange={(e) => setDraft({ ...draft, mode: e.target.value || undefined })}>
             <option value="">全部</option>
             <option value="query">query</option>
@@ -174,7 +184,8 @@ export function TraceList() {
             <option value="table">table</option>
           </select>
         </label>
-        <label>状态
+        <label>
+          状态
           <select value={draft.status ?? ""} onChange={(e) => setDraft({ ...draft, status: e.target.value || undefined })}>
             <option value="">全部</option>
             <option value="ok">ok</option>
@@ -182,17 +193,48 @@ export function TraceList() {
             <option value="unset">unset</option>
           </select>
         </label>
-        <input type="text" placeholder="名称包含（如 director.query）" value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value || undefined })} />
-        <input type="text" placeholder="sessionId" value={draft.sessionId ?? ""} onChange={(e) => setDraft({ ...draft, sessionId: e.target.value || undefined })} />
-        <input type="text" placeholder="executionId" value={draft.executionId ?? ""} onChange={(e) => setDraft({ ...draft, executionId: e.target.value || undefined })} />
-        <input type="text" placeholder="userId" value={draft.userId ?? ""} onChange={(e) => setDraft({ ...draft, userId: e.target.value || undefined })} />
-        <button className="btn" onClick={apply}>筛选</button>
+        <input
+          type="text"
+          placeholder="名称包含…"
+          value={draft.name ?? ""}
+          onChange={(e) => setDraft({ ...draft, name: e.target.value || undefined })}
+        />
+        <input
+          type="text"
+          placeholder="sessionId"
+          value={draft.sessionId ?? ""}
+          onChange={(e) => setDraft({ ...draft, sessionId: e.target.value || undefined })}
+        />
+        <input
+          type="text"
+          placeholder="executionId"
+          value={draft.executionId ?? ""}
+          onChange={(e) => setDraft({ ...draft, executionId: e.target.value || undefined })}
+        />
+        <input
+          type="text"
+          placeholder="userId"
+          value={draft.userId ?? ""}
+          onChange={(e) => setDraft({ ...draft, userId: e.target.value || undefined })}
+        />
+        <button className="btn" onClick={apply}>
+          筛选
+        </button>
+        <button className="btn ghost" type="button" onClick={resetFilters}>
+          重置
+        </button>
       </div>
 
-      {isLoading ? <Spin /> : error ? <ErrorBox error={error} /> : !data || data.items.length === 0 ? (
-        <Empty text="没有匹配的 trace" />
+      {isLoading ? (
+        <Spin label="加载 Trace 列表…" />
+      ) : error ? (
+        <ErrorBox error={error} />
+      ) : !data || data.items.length === 0 ? (
+        <div className="card">
+          <Empty text="没有匹配的 trace" hint="试试放宽筛选条件，或换个时间窗口" />
+        </div>
       ) : (
-        <div className="card" style={{ padding: "8px 6px" }}>
+        <div className="table-wrap">
           <table className="data">
             <thead>
               <tr>
@@ -212,28 +254,39 @@ export function TraceList() {
                 <tr
                   key={t.id}
                   className="clickable"
+                  tabIndex={0}
                   onClick={() => navigate(`/traces/${t.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/traces/${t.id}`);
+                    }
+                  }}
                   title="点击查看详情"
                 >
                   <td className="mono">{fmtTime(t.startedAt)}</td>
                   <td>{t.mode ?? t.name}</td>
-                  <td><StatusBadge status={t.status} /></td>
+                  <td>
+                    <StatusBadge status={t.status} />
+                  </td>
                   <td className="num">{fmtMs(t.durationMs)}</td>
                   <td className="num">{fmtTokens(t.inputTokens + t.outputTokens)}</td>
                   <td className="mono" onClick={(e) => e.stopPropagation()}>
-                    {t.executionId ? <Link to={`/executions/${t.executionId}`}>{t.executionId.slice(0, 12)}…</Link> : "—"}
+                    {t.executionId ? (
+                      <Link to={`/executions/${t.executionId}`}>{t.executionId.slice(0, 12)}…</Link>
+                    ) : (
+                      "—"
+                    )}
                   </td>
-                  <td className="mono" onClick={(e) => e.stopPropagation()}>
+                  <td className="mono" onClick={(e) => e.stopPropagation()} title={t.sessionId}>
                     {t.sessionId.slice(0, 12)}…
                   </td>
-                  <td className="mono">{t.userId.slice(0, 8)}…</td>
+                  <td className="mono" title={t.userId}>
+                    {t.userId.slice(0, 8)}…
+                  </td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <Link
-                      className="btn ghost"
-                      to={`/traces/${t.id}`}
-                      style={{ padding: "3px 10px", fontSize: 12, marginRight: 6 }}
-                    >
-                      查看详情
+                    <Link className="btn ghost" to={`/traces/${t.id}`} style={{ padding: "3px 10px", fontSize: 12, marginRight: 6 }}>
+                      查看
                     </Link>
                     {pruneAvailable ? (
                       <button
@@ -251,11 +304,15 @@ export function TraceList() {
             </tbody>
           </table>
           <div className="pager">
-            <button className="btn ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>上一页</button>
-            <span>
+            <button className="btn ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>
+              上一页
+            </button>
+            <span className="mono">
               {page + 1} / {totalPages} · 共 {data.total} 条
             </span>
-            <button className="btn ghost" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>下一页</button>
+            <button className="btn ghost" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>
+              下一页
+            </button>
           </div>
         </div>
       )}
