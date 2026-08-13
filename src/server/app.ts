@@ -9,13 +9,16 @@ import type { AppConfig } from "./config.js";
 import { createDatabase, type Database } from "./db.js";
 import { authRoutes } from "./routes/auth.js";
 import { executionsRoutes } from "./routes/executions.js";
+import { metricsRoutes } from "./routes/metrics.js";
 import { overviewRoutes } from "./routes/overview.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { tracesRoutes } from "./routes/traces.js";
 import { ExecutionService } from "./services/executionService.js";
+import { MetricsService } from "./services/metricsService.js";
 import { OverviewService } from "./services/overviewService.js";
 import { SessionService } from "./services/sessionService.js";
 import { TraceService } from "./services/traceService.js";
+import { loadSchemaContract, verifySchemaContract } from "./schemaContract.js";
 
 export interface RouteContext {
   config: AppConfig;
@@ -24,6 +27,7 @@ export interface RouteContext {
   overviewService: OverviewService;
   executionService: ExecutionService;
   sessionService: SessionService;
+  metricsService: MetricsService;
   authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
 }
 
@@ -51,18 +55,48 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     }
   };
 
+  const metricsService = new MetricsService(db, managerDb, {
+    retentionDays: config.traceRetentionDays,
+    log: (level, message) => {
+      if (level === "error") app.log.error(message);
+      else if (level === "warn") app.log.warn(message);
+      else app.log.info(message);
+    },
+  });
+
   const ctx: RouteContext = {
     config,
     db,
     traceService: new TraceService(db, managerDb),
-    overviewService: new OverviewService(db, {
-      retentionDays: config.traceRetentionDays,
-      pruneAvailable: managerDb != null,
-    }),
+    overviewService: new OverviewService(
+      db,
+      {
+        retentionDays: config.traceRetentionDays,
+        pruneAvailable: managerDb != null,
+      },
+      metricsService,
+    ),
     executionService: new ExecutionService(db),
     sessionService: new SessionService(db),
+    metricsService,
     authenticate,
   };
+
+  // ── schema 契约校验：启动即检，漂移 fail-fast（可降级为告警）──
+  const contract = loadSchemaContract();
+  const contractReport = await verifySchemaContract(db, contract);
+  if (!contractReport.ok) {
+    const detail = contractReport.issues
+      .map((i) => `${i.kind} ${i.table}${i.column ? "." + i.column : ""} (expected ${i.expected}, got ${i.actual})`)
+      .join("; ");
+    const message = `[schema-contract] drift detected (v${contractReport.schemaVersion}): ${detail}`;
+    if (config.schemaStrict) {
+      throw new Error(message);
+    }
+    app.log.warn(`${message} — running in non-strict mode`);
+  } else {
+    app.log.info(`[schema-contract] ok: ${contractReport.checkedTables} tables match v${contractReport.schemaVersion}`);
+  }
 
   app.get("/api/health", async () => ({ ok: true }));
 
@@ -81,6 +115,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(tracesRoutes, { ctx });
   await app.register(executionsRoutes, { ctx });
   await app.register(sessionsRoutes, { ctx });
+  await app.register(metricsRoutes, { ctx });
 
   // Trace 保留（TTL）清理器：按配置天数定期删除过期 trace。
   // 仅当配置了 obs_manager 连接且保留天数 > 0 时启用。
@@ -102,6 +137,38 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     app.log.info(
       `[retention] TTL enabled: ${config.traceRetentionDays}d, sweep every ${Math.round(config.retentionSweepIntervalMs / 60_000)}m`,
     );
+  }
+
+  // ── schema 契约定时复检：漂移发现延迟 ≤ 1 个调度周期 ──
+  const contractCheck = async (): Promise<void> => {
+    try {
+      const report = await verifySchemaContract(db, contract);
+      if (!report.ok) {
+        const detail = report.issues
+          .map((i) => `${i.kind} ${i.table}${i.column ? "." + i.column : ""}`)
+          .join("; ");
+        app.log.warn(`[schema-contract] periodic check found drift: ${detail}`);
+      }
+    } catch (err) {
+      app.log.error(`[schema-contract] periodic check failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  const contractTimer = setInterval(contractCheck, config.retentionSweepIntervalMs);
+  contractTimer.unref();
+
+  // ── 指标聚合：小时级写入 obs_metrics（需 obs_manager；未配置则禁用）──
+  if (ctx.metricsService.enabled) {
+    void ctx.metricsService.runScheduledAggregate(); // 启动即补一次上一小时
+    const metricsTimer = setInterval(
+      () => void ctx.metricsService.runScheduledAggregate(),
+      config.metricsIntervalMs,
+    );
+    metricsTimer.unref();
+    app.log.info(
+      `[metrics] hourly aggregation enabled, interval ${Math.round(config.metricsIntervalMs / 60_000)}m`,
+    );
+  } else {
+    app.log.warn("[metrics] aggregation disabled: OBS_MANAGER_DATABASE_URL not configured");
   }
 
   // 生产模式：托管构建好的前端 SPA（非 /api 路径回退 index.html）

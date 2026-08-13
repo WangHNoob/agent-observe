@@ -1,5 +1,6 @@
 import type pg from "pg";
 import type { Database } from "../db.js";
+import type { MetricsService } from "./metricsService.js";
 
 export interface OverviewData {
   /** 统计窗口（小时） */
@@ -33,6 +34,7 @@ export class OverviewService {
   constructor(
     private readonly db: Database,
     private readonly meta: { retentionDays: number; pruneAvailable: boolean },
+    private readonly metricsService?: MetricsService,
   ) {}
 
   async getOverview(): Promise<OverviewData> {
@@ -57,11 +59,12 @@ export class OverviewService {
          GROUP BY status ORDER BY n DESC`,
       ),
       this.db.query(
-        `SELECT split_part(name, '.', 2) AS mode,
+        `SELECT COALESCE(e.mode, split_part(t.name, '.', 2)) AS mode,
                 COUNT(*)::int AS n,
-                COUNT(*) FILTER (WHERE status = 'error')::int AS errors
-         FROM agent_traces
-         WHERE name LIKE 'director.%' AND created_at >= now() - interval '${WINDOW_HOURS} hours'
+                COUNT(*) FILTER (WHERE t.status = 'error')::int AS errors
+         FROM agent_traces t
+         LEFT JOIN executions e ON e.id = t.execution_id
+         WHERE t.name LIKE 'director.%' AND t.created_at >= now() - interval '${WINDOW_HOURS} hours'
          GROUP BY 1 ORDER BY n DESC`,
       ),
       this.db.query(
@@ -96,14 +99,44 @@ export class OverviewService {
     for (const r of trend.rows) {
       buckets.set(r.bucket as string, { n: Number(r.n ?? 0), errors: Number(r.errors ?? 0) });
     }
-    const trendFilled: OverviewData["trend"] = [];
     const now = new Date();
+    const trendFilled: OverviewData["trend"] = [];
     for (let i = WINDOW_HOURS - 1; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 3_600_000);
       d.setMinutes(0, 0, 0);
       const key = d.toISOString().slice(0, 13) + ":00";
       const row = buckets.get(key) ?? { n: 0, errors: 0 };
       trendFilled.push({ bucket: key, ...row });
+    }
+
+    // 指标表可用时，24h 趋势桶优先使用已聚合的 obs_metrics 数据（跨请求一致）；
+    // 表为空（刚部署/未配置 manager）时回退实时聚合。
+    let trendFromMetrics: Map<string, { n: number; errors: number }> | null = null;
+    if (this.metricsService) {
+      try {
+        const points = await this.metricsService.getTrend(1);
+        if (points.length > 0) {
+          const byBucket = new Map<string, { n: number; errors: number }>();
+          for (const p of points) {
+            const cur = byBucket.get(p.bucket) ?? { n: 0, errors: 0 };
+            cur.n += p.n;
+            cur.errors += p.errorN;
+            byBucket.set(p.bucket, cur);
+          }
+          trendFromMetrics = byBucket;
+        }
+      } catch {
+        trendFromMetrics = null; // 指标表不可读时静默回退实时聚合
+      }
+    }
+    if (trendFromMetrics) {
+      for (const item of trendFilled) {
+        const row = trendFromMetrics.get(item.bucket);
+        if (row) {
+          item.n = row.n;
+          item.errors = row.errors;
+        }
+      }
     }
 
     const data: OverviewData = {
