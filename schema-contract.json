@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "description": "agent-observe 依赖的 design-agent 共享库表结构契约。变更需同步 design-agent 的 drizzle 迁移与两仓的版本号。",
+  "typeFamilies": {
+    "text": ["text", "character varying", "character", "varchar", "char"],
+    "timestamptz": ["timestamp with time zone", "timestamp without time zone"],
+    "jsonb": ["jsonb", "json"],
+    "numeric": ["integer", "bigint", "smallint", "numeric", "decimal", "real", "double precision"],
+    "boolean": ["boolean"],
+    "uuid": ["uuid"]
+  },
+  "tables": [
+    {
+      "table": "agent_traces",
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "user_id", "type": "text" },
+        { "name": "trace_session_id", "type": "text" },
+        { "name": "session_id", "type": "text" },
+        { "name": "execution_id", "type": "text" },
+        { "name": "name", "type": "text" },
+        { "name": "status", "type": "text" },
+        { "name": "attributes", "type": "jsonb" },
+        { "name": "started_at", "type": "timestamptz" },
+        { "name": "ended_at", "type": "timestamptz" },
+        { "name": "created_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "table": "agent_spans",
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "user_id", "type": "text" },
+        { "name": "trace_id", "type": "text" },
+        { "name": "parent_span_id", "type": "text" },
+        { "name": "name", "type": "text" },
+        { "name": "phase", "type": "text" },
+        { "name": "kind", "type": "text" },
+        { "name": "status", "type": "text" },
+        { "name": "attributes", "type": "jsonb" },
+        { "name": "started_at", "type": "timestamptz" },
+        { "name": "ended_at", "type": "timestamptz" },
+        { "name": "created_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "table": "agent_trace_sessions",
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "user_id", "type": "text" },
+        { "name": "session_id", "type": "text" }
+      ]
+    },
+    {
+      "table": "cost_usage",
+      "columns": [
+        { "name": "id", "type": "uuid" },
+        { "name": "user_id", "type": "text" },
+        { "name": "trace_id", "type": "text" },
+        { "name": "agent_name", "type": "text" },
+        { "name": "model_name", "type": "text" },
+        { "name": "input_tokens", "type": "numeric" },
+        { "name": "output_tokens", "type": "numeric" },
+        { "name": "estimated_cost_micros", "type": "numeric" },
+        { "name": "created_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "table": "audit_logs",
+      "columns": [
+        { "name": "id", "type": "uuid" },
+        { "name": "trace_id", "type": "text" },
+        { "name": "action", "type": "text" },
+        { "name": "resource_type", "type": "text" },
+        { "name": "resource_id", "type": "text" },
+        { "name": "outcome", "type": "text" },
+        { "name": "detail", "type": "jsonb" },
+        { "name": "created_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "table": "executions",
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "user_id", "type": "text" },
+        { "name": "session_id", "type": "text" },
+        { "name": "idempotency_key", "type": "text" },
+        { "name": "status", "type": "text" },
+        { "name": "mode", "type": "text" },
+        { "name": "request_payload", "type": "jsonb" },
+        { "name": "plan_payload", "type": "jsonb" },
+        { "name": "result_payload", "type": "jsonb" },
+        { "name": "error_class", "type": "text" },
+        { "name": "error_message", "type": "text" },
+        { "name": "deadline_at", "type": "timestamptz" },
+        { "name": "started_at", "type": "timestamptz" },
+        { "name": "completed_at", "type": "timestamptz" },
+        { "name": "created_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "table": "execution_tasks",
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "execution_id", "type": "text" },
+        { "name": "task_key", "type": "text" },
+        { "name": "name", "type": "text" },
+        { "name": "agent_name", "type": "text" },
+        { "name": "status", "type": "text" },
+        { "name": "dependencies", "type": "jsonb" },
+        { "name": "position", "type": "numeric" },
+        { "name": "error_class", "type": "text" },
+        { "name": "error_message", "type": "text" },
+        { "name": "started_at", "type": "timestamptz" },
+        { "name": "completed_at", "type": "timestamptz" },
+        { "name": "created_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "table": "execution_attempts",
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "execution_id", "type": "text" },
+        { "name": "task_id", "type": "text" },
+        { "name": "attempt_number", "type": "numeric" },
+        { "name": "status", "type": "text" },
+        { "name": "error_class", "type": "text" },
+        { "name": "error_code", "type": "text" },
+        { "name": "error_message", "type": "text" },
+        { "name": "started_at", "type": "timestamptz" },
+        { "name": "finished_at", "type": "timestamptz" }
+      ]
+    },
+    {
+      "table": "sessions",
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "user_id", "type": "text" },
+        { "name": "requirement", "type": "text" },
+        { "name": "mode", "type": "text" },
+        { "name": "role", "type": "text" },
+        { "name": "status", "type": "text" },
+        { "name": "output", "type": "text" },
+        { "name": "error", "type": "text" },
+        { "name": "created_at", "type": "timestamptz" },
+        { "name": "updated_at", "type": "timestamptz" }
+      ]
+    }
+  ]
+}
