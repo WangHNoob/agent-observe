@@ -74,13 +74,26 @@ try {
     `CREATE INDEX IF NOT EXISTS idx_obs_alerts_status ON obs_metrics.alerts (status, last_seen_at DESC)`,
   );
 
+  // ── 表：知识飞轮回流信号（幂等去重，观测 → knowledge-hub）──────────
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS obs_metrics.flywheel_reports (
+       report_key    text PRIMARY KEY,
+       rule          text NOT NULL,
+       reported_at   timestamptz NOT NULL DEFAULT NOW(),
+       detail        jsonb NOT NULL DEFAULT '{}'::jsonb
+     )`,
+  );
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_obs_flywheel_reported ON obs_metrics.flywheel_reports (reported_at DESC)`,
+  );
+
   // ── 授权 ──────────────────────────────────────────────────────────
   await client.query("GRANT USAGE ON SCHEMA obs_metrics TO obs_reader");
-  await client.query("GRANT SELECT ON obs_metrics.metric_hourly, obs_metrics.alerts TO obs_reader");
+  await client.query("GRANT SELECT ON obs_metrics.metric_hourly, obs_metrics.alerts, obs_metrics.flywheel_reports TO obs_reader");
 
   await client.query("GRANT USAGE ON SCHEMA obs_metrics TO obs_manager");
   await client.query(
-    "GRANT SELECT, INSERT, UPDATE, DELETE ON obs_metrics.metric_hourly, obs_metrics.alerts TO obs_manager",
+    "GRANT SELECT, INSERT, UPDATE, DELETE ON obs_metrics.metric_hourly, obs_metrics.alerts, obs_metrics.flywheel_reports TO obs_manager",
   );
 
   // 未来新表自动授权（防漏）
