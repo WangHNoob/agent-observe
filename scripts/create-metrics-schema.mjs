@@ -87,13 +87,41 @@ try {
     `CREATE INDEX IF NOT EXISTS idx_obs_flywheel_reported ON obs_metrics.flywheel_reports (reported_at DESC)`,
   );
 
+  // ── 表：在线评测采样候选池（flywheel 03-P4）─────────────────────────
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS obs_metrics.eval_candidates (
+       id             text PRIMARY KEY,
+       trace_id       text NOT NULL DEFAULT '',
+       execution_id   text NOT NULL DEFAULT '',
+       user_id        text NOT NULL DEFAULT '',
+       session_id     text NOT NULL DEFAULT '',
+       mode           text NOT NULL DEFAULT 'query',
+       question       text NOT NULL,
+       answer         text NOT NULL DEFAULT '',
+       source         text NOT NULL DEFAULT 'plain_query',
+       status         text NOT NULL DEFAULT 'pending',
+       created_at     timestamptz NOT NULL DEFAULT NOW(),
+       exported_at    timestamptz,
+       updated_by     text NOT NULL DEFAULT '',
+       updated_at     timestamptz NOT NULL DEFAULT NOW()
+     )`,
+  );
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_obs_eval_candidates_status ON obs_metrics.eval_candidates (status, created_at DESC)`,
+  );
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_obs_eval_candidates_dedupe ON obs_metrics.eval_candidates (user_id, question, created_at DESC)`,
+  );
+
   // ── 授权 ──────────────────────────────────────────────────────────
   await client.query("GRANT USAGE ON SCHEMA obs_metrics TO obs_reader");
-  await client.query("GRANT SELECT ON obs_metrics.metric_hourly, obs_metrics.alerts, obs_metrics.flywheel_reports TO obs_reader");
+  await client.query(
+    "GRANT SELECT ON obs_metrics.metric_hourly, obs_metrics.alerts, obs_metrics.flywheel_reports, obs_metrics.eval_candidates TO obs_reader",
+  );
 
   await client.query("GRANT USAGE ON SCHEMA obs_metrics TO obs_manager");
   await client.query(
-    "GRANT SELECT, INSERT, UPDATE, DELETE ON obs_metrics.metric_hourly, obs_metrics.alerts, obs_metrics.flywheel_reports TO obs_manager",
+    "GRANT SELECT, INSERT, UPDATE, DELETE ON obs_metrics.metric_hourly, obs_metrics.alerts, obs_metrics.flywheel_reports, obs_metrics.eval_candidates TO obs_manager",
   );
 
   // 未来新表自动授权（防漏）
@@ -102,7 +130,7 @@ try {
     "ALTER DEFAULT PRIVILEGES IN SCHEMA obs_metrics GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO obs_manager",
   );
 
-  console.log("[ok] obs_metrics.metric_hourly ready (reader=SELECT, manager=SELECT/INSERT/UPDATE/DELETE)");
+  console.log("[ok] obs_metrics schema ready (metric_hourly / alerts / flywheel_reports / eval_candidates; reader=SELECT, manager=SELECT/INSERT/UPDATE/DELETE)");
 } finally {
   await client.end();
 }

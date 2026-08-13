@@ -61,6 +61,10 @@ pnpm build && pnpm start
 | POST | `/api/alerts/:id/resolve` | 人工解决告警（body: `{ by }` 留痕） |
 | GET | `/api/flywheel/status` | 知识飞轮回流状态（enabled / dryRun） |
 | GET | `/api/flywheel/reports` | 已上报的飞轮信号（幂等键 / 规则 / 时间 / 详情） |
+| GET | `/api/eval/candidates` | 在线评测采样候选池（status/limit/offset 过滤；`samplingEnabled=false` 表示未配置 manager） |
+| GET | `/api/eval/candidates/export` | 导出候选（question + answer + trace 溯源，knowledge-hub evals 兼容 JSON 下载） |
+| POST | `/api/eval/candidates/sample` | 手动触发一轮采样（需 obs_manager） |
+| POST | `/api/eval/candidates/:id/status` | 标记 exported / dismissed（需 obs_manager） |
 
 管理（`obs_manager`，未配置 `OBS_MANAGER_DATABASE_URL` 时返回 503）：
 
@@ -79,6 +83,7 @@ pnpm build && pnpm start
 - `/traces` 列表：多条件筛选（Enter / 重置）+ 分页；保留策略走 `/api/meta`；**单条删除**与**批量清理面板**（预览匹配数 → 确认删除）
 - `/traces/:id` 详情：**span 瀑布图**（九态 phase 着色，键盘可选中）→ 点击后再拉完整 attributes；内嵌 requirement / agent 输出摘要；cost / audit；删除入口
 - `/executions/:id` 详情：一次请求含主 Trace 瀑布图 + 任务 DAG + attempts 重试链
+- `/eval-candidates` 评测候选池：采样来源（FAQ 未命中 / 工具链 ≥ 2 / 普通 query）+ 答案片段 + trace 溯源；一键采样 / 导出 / 标记
 
 ## 性能要点
 
@@ -89,6 +94,7 @@ pnpm build && pnpm start
 - schema 契约：启动 + 每小时复检 `information_schema` 对比 `schema-contract.json`，漂移 fail-fast（`OBS_SCHEMA_STRICT=false` 降级告警）
 - 告警：规则引擎（错误率 / 单执行 token 风暴 / 24h 成本 / 超时次数 / HITL 挂起 / schema 漂移），同 `(rule,key)` 幂等去重、条件恢复自动 resolved、可选 webhook（`OBS_ALERT_WEBHOOK_URL`）
 - 知识飞轮回流：观测信号 → knowledge-hub（R1 同需求错误率 / R2 超时 / R3 工具反复失败 / R4 24h 成本），经 `kb_report_gap`/`kb_report_bad_hit` 写回 `POST /api/mcp/query`；幂等窗口去重（`obs_metrics.flywheel_reports`）、dry-run 灰度（`OBS_FLYWHEEL_DRY_RUN`）、上报失败不中断评估
+- 在线评测采样（flywheel 03-P4）：每小时扫描窗口内完成的 execution trace（只读共享表），按采样条件（FAQ 未命中属性 / 工具调用 span ≥ 2 / 保底普通 query）判为候选写入自有表 `obs_metrics.eval_candidates`；按 (user, question) 90 天去重、单轮上限、写路径全部走 obs_manager；「用户评价/复制点赞」类 UI 信号待 design-agent 前端事件接入（文档注明）；候选导出为 question + answer + trace 溯源，人工改写后并入 knowledge-hub `retrieval-gold.json`
 - 前端：Waterfall `useMemo` + 行 memo；JSON 仅在展开时语法高亮；大结果表截断展示
 
 ## 测试
@@ -106,5 +112,5 @@ pnpm build       # 前端 vite 构建
 - OTLP exporter 对接（Jaeger/Tempo，属 agent 端事项）
 - 多用户 / 只读角色密码轮换
 - 共享库建议索引落地：见 [docs/suggested-indexes.md](./docs/suggested-indexes.md)（在 design-agent 的 drizzle 迁移中执行）
-- 回流信号 R5（低反馈率组件 → kb_report_stale）：待 knowledge-hub 消费侧指标（引用率/点击率）就绪后接入
-- 在线评测采样对接（生产 query trace → 判分候选，与 design-agent 侧协同，见 flywheel-plans/03 Phase 4）
+- 回流信号 R5（低反馈率组件 → kb_report_stale）：待 knowledge-hub 消费侧指标（引用率/点击率）就绪后接入（K7 消费维度已落地，R5 可接）
+- 「用户明确评价 / 复制点赞」类采样信号：待 design-agent 前端事件写入共享表后接入采样器（当前采样条件为 FAQ 未命中 / 工具链 ≥ 2 / 保底普通 query）

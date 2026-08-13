@@ -1,4 +1,4 @@
-import { Activity, LayoutDashboard, ListTree, LogOut } from "lucide-react";
+import { Activity, ClipboardList, LayoutDashboard, ListTree, LogOut } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { clearToken } from "../api/http";
 
@@ -24,6 +24,10 @@ export function Layout() {
         <NavLink to="/traces" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           <ListTree size={16} strokeWidth={1.75} />
           Trace 列表
+        </NavLink>
+        <NavLink to="/eval-candidates" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
+          <ClipboardList size={16} strokeWidth={1.75} />
+          评测候选池
         </NavLink>
         <div className="spacer" />
         <div className="side-meta">
