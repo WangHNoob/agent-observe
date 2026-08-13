@@ -64,6 +64,19 @@ export interface AppConfig {
       dedupeWindowHours: number;
     };
   };
+  /** 在线评测采样（flywheel 03-P4）：生产 query trace → 判分候选池 */
+  evalSampling: {
+    /** 采样器开关（默认开启；未配置 obs_manager 时自动禁用写入） */
+    enabled: boolean;
+    /** 采样窗口（小时），默认 24 */
+    windowHours: number;
+    /** 单轮最多采样数，默认 20 */
+    maxPerRun: number;
+    /** 同 (user, question) 去重窗口（天），默认 90 */
+    dedupeDays: number;
+    /** 采样运行间隔（毫秒），默认 1 小时 */
+    intervalMs: number;
+  };
 }
 
 function required(name: string, env: NodeJS.ProcessEnv): string {
@@ -113,6 +126,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         costThresholdMicros: Number(env.OBS_FLYWHEEL_COST_THRESHOLD_MICROS ?? 5_000_000),
         dedupeWindowHours: Number(env.OBS_FLYWHEEL_DEDUPE_HOURS ?? 24),
       },
+    },
+    evalSampling: {
+      enabled: env.OBS_EVAL_SAMPLING_ENABLED !== "false",
+      windowHours: Number(env.OBS_EVAL_SAMPLING_WINDOW_HOURS ?? 24),
+      maxPerRun: Number(env.OBS_EVAL_SAMPLING_MAX_PER_RUN ?? 20),
+      dedupeDays: Number(env.OBS_EVAL_SAMPLING_DEDUPE_DAYS ?? 90),
+      intervalMs: Number(env.OBS_EVAL_SAMPLING_INTERVAL_MS ?? 3_600_000),
     },
   };
 }

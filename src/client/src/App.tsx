@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { getToken } from "./api/http";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
+import { EvalCandidates } from "./pages/EvalCandidates";
 import { ExecutionDetail } from "./pages/ExecutionDetail";
 import { Login } from "./pages/Login";
 import { TraceDetail } from "./pages/TraceDetail";
@@ -30,6 +31,7 @@ export function App() {
         <Route path="/traces" element={<TraceList />} />
         <Route path="/traces/:id" element={<TraceDetail />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
+        <Route path="/eval-candidates" element={<EvalCandidates />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
