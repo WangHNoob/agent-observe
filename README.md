@@ -22,6 +22,8 @@
 ```bash
 # 1. 一次性：创建数据库角色（obs_reader 只读 + obs_manager 管理；幂等，可重复执行）
 pnpm db:create-role
+# 1b. 一次性：创建观测台自有指标 schema（obs_metrics.metric_hourly；幂等）
+node scripts/create-metrics-schema.mjs
 # 或手动：
 #   PGPASSWORD=game_designer psql -h localhost -p 5433 -U game_designer -d game_designer \
 #     -c "CREATE ROLE obs_reader LOGIN PASSWORD 'obs_reader_dev'; GRANT CONNECT ON DATABASE game_designer TO obs_reader; GRANT USAGE ON SCHEMA public TO obs_reader; GRANT SELECT ON ALL TABLES IN SCHEMA public TO obs_reader; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO obs_reader;"
@@ -54,6 +56,7 @@ pnpm build && pnpm start
 | GET | `/api/traces/:id/spans/:spanId` | 按需拉取单个 span 的完整 attributes（瀑布图点击后） |
 | GET | `/api/executions/:id` | 执行详情：七态 execution + DAG tasks + attempts；`?include=primaryTrace` 一次附带主 Trace（lite spans） |
 | GET | `/api/sessions/:id` | 会话详情：会话 + 其 traces + 其 executions |
+| GET | `/api/metrics/trend?days=N` | 小时级指标趋势（1–90 天，数据源 obs_metrics.metric_hourly；未配置 manager 时 `metricsEnabled=false`） |
 
 管理（`obs_manager`，未配置 `OBS_MANAGER_DATABASE_URL` 时返回 503）：
 
@@ -77,7 +80,9 @@ pnpm build && pnpm start
 
 - Trace 列表：先 `LIMIT/OFFSET` 再 JOIN `cost_usage` 聚合，避免对全量匹配行 GROUP BY
 - Trace / Execution 详情：默认 lite spans，大段 tool/LLM JSON 按需加载
-- Overview：15s 进程内短缓存；`recentErrors` 限制在近 24h
+- Overview：15s 进程内短缓存；`recentErrors` 限制在近 24h；mode 统计优先 JOIN `executions.mode`（trace 名解析仅作回退）
+- 指标：小时级聚合写入独立 schema `obs_metrics`（`/api/metrics/trend` 跨天趋势），24h overview 趋势桶优先使用指标表、空表时回退实时聚合
+- schema 契约：启动 + 每小时复检 `information_schema` 对比 `schema-contract.json`，漂移 fail-fast（`OBS_SCHEMA_STRICT=false` 降级告警）
 - 前端：Waterfall `useMemo` + 行 memo；JSON 仅在展开时语法高亮；大结果表截断展示
 
 ## 测试
@@ -94,4 +99,5 @@ pnpm build       # 前端 vite 构建
 - Redis 执行事件流回放（chunk 文本回放，依赖 design-agent Redis 留存）
 - OTLP exporter 对接（Jaeger/Tempo，属 agent 端事项）
 - 多用户 / 只读角色密码轮换
-- 共享库建议索引（`agent_traces(started_at DESC)` / `(execution_id)` / `agent_spans(trace_id)` 等）
+- 共享库建议索引落地：见 [docs/suggested-indexes.md](./docs/suggested-indexes.md)（在 design-agent 的 drizzle 迁移中执行）
+- 告警引擎（错误率/token 风暴/HITL 挂起 → webhook）与观测信号回流知识库飞轮（flywheel-plans/03 后续 Phase）
