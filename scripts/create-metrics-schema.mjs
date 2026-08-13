@@ -53,13 +53,34 @@ try {
      )`,
   );
 
+  // ── 表：告警（幂等创建）───────────────────────────────────────────
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS obs_metrics.alerts (
+       id           text PRIMARY KEY,
+       rule         text NOT NULL,
+       severity     text NOT NULL,
+       status       text NOT NULL DEFAULT 'open',
+       key          text NOT NULL,
+       message      text NOT NULL,
+       detail       jsonb NOT NULL DEFAULT '{}'::jsonb,
+       first_seen_at timestamptz NOT NULL DEFAULT NOW(),
+       last_seen_at  timestamptz NOT NULL DEFAULT NOW(),
+       resolved_at   timestamptz,
+       resolved_by   text,
+       created_at    timestamptz NOT NULL DEFAULT NOW()
+     )`,
+  );
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_obs_alerts_status ON obs_metrics.alerts (status, last_seen_at DESC)`,
+  );
+
   // ── 授权 ──────────────────────────────────────────────────────────
   await client.query("GRANT USAGE ON SCHEMA obs_metrics TO obs_reader");
-  await client.query("GRANT SELECT ON obs_metrics.metric_hourly TO obs_reader");
+  await client.query("GRANT SELECT ON obs_metrics.metric_hourly, obs_metrics.alerts TO obs_reader");
 
   await client.query("GRANT USAGE ON SCHEMA obs_metrics TO obs_manager");
   await client.query(
-    "GRANT SELECT, INSERT, UPDATE, DELETE ON obs_metrics.metric_hourly TO obs_manager",
+    "GRANT SELECT, INSERT, UPDATE, DELETE ON obs_metrics.metric_hourly, obs_metrics.alerts TO obs_manager",
   );
 
   // 未来新表自动授权（防漏）

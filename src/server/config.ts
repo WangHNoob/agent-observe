@@ -23,6 +23,19 @@ export interface AppConfig {
   schemaStrict: boolean;
   /** 指标聚合周期（毫秒），默认 1 小时 */
   metricsIntervalMs: number;
+  /** 告警评估周期（毫秒），默认 10 分钟 */
+  alertIntervalMs: number;
+  /** 告警 webhook URL（钉钉/飞书/企业微信）；不配置则仅站内记录 */
+  alertWebhookUrl?: string;
+  /** 告警规则阈值（可覆盖默认值） */
+  alertThresholds: {
+    errorRate: number;
+    errorRateMinTraces: number;
+    tokenStormThreshold: number;
+    costSpikeThresholdMicros: number;
+    timeoutSpikeThreshold: number;
+    hitlStallHours: number;
+  };
 }
 
 function required(name: string, env: NodeJS.ProcessEnv): string {
@@ -48,5 +61,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     corsOrigin: env.CORS_ORIGIN ?? "http://localhost:5180",
     schemaStrict: env.OBS_SCHEMA_STRICT !== "false",
     metricsIntervalMs: Number(env.OBS_METRICS_INTERVAL_MS ?? 3_600_000),
+    alertIntervalMs: Number(env.OBS_ALERT_INTERVAL_MS ?? 600_000),
+    alertWebhookUrl: env.OBS_ALERT_WEBHOOK_URL || undefined,
+    alertThresholds: {
+      errorRate: Number(env.OBS_ALERT_ERROR_RATE ?? 0.2),
+      errorRateMinTraces: Number(env.OBS_ALERT_ERROR_MIN_TRACES ?? 10),
+      tokenStormThreshold: Number(env.OBS_ALERT_TOKEN_THRESHOLD ?? 400_000),
+      costSpikeThresholdMicros: Number(env.OBS_ALERT_COST_THRESHOLD_MICROS ?? 5_000_000),
+      timeoutSpikeThreshold: Number(env.OBS_ALERT_TIMEOUT_THRESHOLD ?? 3),
+      hitlStallHours: Number(env.OBS_ALERT_HITL_STALL_HOURS ?? 24),
+    },
   };
 }

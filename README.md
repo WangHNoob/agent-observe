@@ -57,6 +57,8 @@ pnpm build && pnpm start
 | GET | `/api/executions/:id` | 执行详情：七态 execution + DAG tasks + attempts；`?include=primaryTrace` 一次附带主 Trace（lite spans） |
 | GET | `/api/sessions/:id` | 会话详情：会话 + 其 traces + 其 executions |
 | GET | `/api/metrics/trend?days=N` | 小时级指标趋势（1–90 天，数据源 obs_metrics.metric_hourly；未配置 manager 时 `metricsEnabled=false`） |
+| GET | `/api/alerts` | 告警列表（open 优先，按 last_seen 倒序；`alertsEnabled=false` 表示未配置 manager） |
+| POST | `/api/alerts/:id/resolve` | 人工解决告警（body: `{ by }` 留痕） |
 
 管理（`obs_manager`，未配置 `OBS_MANAGER_DATABASE_URL` 时返回 503）：
 
@@ -83,6 +85,7 @@ pnpm build && pnpm start
 - Overview：15s 进程内短缓存；`recentErrors` 限制在近 24h；mode 统计优先 JOIN `executions.mode`（trace 名解析仅作回退）
 - 指标：小时级聚合写入独立 schema `obs_metrics`（`/api/metrics/trend` 跨天趋势），24h overview 趋势桶优先使用指标表、空表时回退实时聚合
 - schema 契约：启动 + 每小时复检 `information_schema` 对比 `schema-contract.json`，漂移 fail-fast（`OBS_SCHEMA_STRICT=false` 降级告警）
+- 告警：规则引擎（错误率 / 单执行 token 风暴 / 24h 成本 / 超时次数 / HITL 挂起 / schema 漂移），同 `(rule,key)` 幂等去重、条件恢复自动 resolved、可选 webhook（`OBS_ALERT_WEBHOOK_URL`）
 - 前端：Waterfall `useMemo` + 行 memo；JSON 仅在展开时语法高亮；大结果表截断展示
 
 ## 测试

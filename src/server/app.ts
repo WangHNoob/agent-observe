@@ -8,11 +8,13 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import type { AppConfig } from "./config.js";
 import { createDatabase, type Database } from "./db.js";
 import { authRoutes } from "./routes/auth.js";
+import { alertsRoutes } from "./routes/alerts.js";
 import { executionsRoutes } from "./routes/executions.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { overviewRoutes } from "./routes/overview.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { tracesRoutes } from "./routes/traces.js";
+import { AlertService } from "./services/alertService.js";
 import { ExecutionService } from "./services/executionService.js";
 import { MetricsService } from "./services/metricsService.js";
 import { OverviewService } from "./services/overviewService.js";
@@ -28,6 +30,7 @@ export interface RouteContext {
   executionService: ExecutionService;
   sessionService: SessionService;
   metricsService: MetricsService;
+  alertService: AlertService;
   authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
 }
 
@@ -64,6 +67,16 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     },
   });
 
+  const alertService = new AlertService(db, managerDb, {
+    thresholds: config.alertThresholds,
+    webhookUrl: config.alertWebhookUrl,
+    log: (level, message) => {
+      if (level === "error") app.log.error(message);
+      else if (level === "warn") app.log.warn(message);
+      else app.log.info(message);
+    },
+  });
+
   const ctx: RouteContext = {
     config,
     db,
@@ -79,6 +92,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     executionService: new ExecutionService(db),
     sessionService: new SessionService(db),
     metricsService,
+    alertService,
     authenticate,
   };
 
@@ -116,6 +130,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(executionsRoutes, { ctx });
   await app.register(sessionsRoutes, { ctx });
   await app.register(metricsRoutes, { ctx });
+  await app.register(alertsRoutes, { ctx });
 
   // Trace 保留（TTL）清理器：按配置天数定期删除过期 trace。
   // 仅当配置了 obs_manager 连接且保留天数 > 0 时启用。
@@ -148,6 +163,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
           .map((i) => `${i.kind} ${i.table}${i.column ? "." + i.column : ""}`)
           .join("; ");
         app.log.warn(`[schema-contract] periodic check found drift: ${detail}`);
+        await ctx.alertService.raiseSchemaDrift(detail);
       }
     } catch (err) {
       app.log.error(`[schema-contract] periodic check failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -169,6 +185,21 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     );
   } else {
     app.log.warn("[metrics] aggregation disabled: OBS_MANAGER_DATABASE_URL not configured");
+  }
+
+  // ── 告警评估：基于指标表与实时查询的规则触发/恢复（需 obs_manager）──
+  if (ctx.alertService.enabled) {
+    void ctx.alertService.runScheduledEvaluation(); // 启动即评估一次
+    const alertTimer = setInterval(
+      () => void ctx.alertService.runScheduledEvaluation(),
+      config.alertIntervalMs,
+    );
+    alertTimer.unref();
+    app.log.info(
+      `[alerts] evaluation enabled, interval ${Math.round(config.alertIntervalMs / 60_000)}m`,
+    );
+  } else {
+    app.log.warn("[alerts] evaluation disabled: OBS_MANAGER_DATABASE_URL not configured");
   }
 
   // 生产模式：托管构建好的前端 SPA（非 /api 路径回退 index.html）
