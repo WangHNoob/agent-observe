@@ -19,6 +19,10 @@ export interface AppConfig {
   host: string;
   /** 开发时前端（Vite 5180）跨域来源 */
   corsOrigin: string;
+  /** schema 契约校验：严格模式发现漂移直接启动失败；false 降级为仅告警 */
+  schemaStrict: boolean;
+  /** 指标聚合周期（毫秒），默认 1 小时 */
+  metricsIntervalMs: number;
 }
 
 function required(name: string, env: NodeJS.ProcessEnv): string {
@@ -42,5 +46,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: Number(env.PORT ?? 4180),
     host: env.HOST ?? "0.0.0.0",
     corsOrigin: env.CORS_ORIGIN ?? "http://localhost:5180",
+    schemaStrict: env.OBS_SCHEMA_STRICT !== "false",
+    metricsIntervalMs: Number(env.OBS_METRICS_INTERVAL_MS ?? 3_600_000),
   };
 }
