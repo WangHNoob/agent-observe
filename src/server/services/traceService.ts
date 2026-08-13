@@ -106,15 +106,17 @@ function traceFilterClause(): string {
     AND ($8::timestamptz IS NULL OR t.started_at <= $8)`;
 }
 
-/** 先按筛选分页取页内 trace，再 JOIN cost 聚合——避免对全量匹配行做 GROUP BY。 */
+/** 先按筛选分页取页内 trace，再 JOIN cost 聚合——避免对全量匹配行做 GROUP BY。
+ *  mode 优先取 executions.mode（join），execution 缺失时回退从 trace 名解析。 */
 function traceListPageSql(): string {
   return `
   WITH page AS (
     SELECT t.id, t.name, t.status, t.user_id, t.session_id, t.execution_id,
            t.started_at, t.ended_at,
            EXTRACT(EPOCH FROM (t.ended_at - t.started_at)) * 1000 AS duration_ms,
-           split_part(t.name, '.', 2) AS mode
+           COALESCE(e.mode, split_part(t.name, '.', 2)) AS mode
     FROM agent_traces t
+    LEFT JOIN executions e ON e.id = t.execution_id
     ${traceFilterClause()}
     ORDER BY t.started_at DESC
     LIMIT $9 OFFSET $10
