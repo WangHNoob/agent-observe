@@ -9,12 +9,14 @@ import type { AppConfig } from "./config.js";
 import { createDatabase, type Database } from "./db.js";
 import { authRoutes } from "./routes/auth.js";
 import { alertsRoutes } from "./routes/alerts.js";
+import { flywheelRoutes } from "./routes/flywheel.js";
 import { executionsRoutes } from "./routes/executions.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { overviewRoutes } from "./routes/overview.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { tracesRoutes } from "./routes/traces.js";
 import { AlertService } from "./services/alertService.js";
+import { FlywheelReporter } from "./services/flywheelReporter.js";
 import { ExecutionService } from "./services/executionService.js";
 import { MetricsService } from "./services/metricsService.js";
 import { OverviewService } from "./services/overviewService.js";
@@ -31,6 +33,7 @@ export interface RouteContext {
   sessionService: SessionService;
   metricsService: MetricsService;
   alertService: AlertService;
+  flywheelReporter: FlywheelReporter;
   authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
 }
 
@@ -77,6 +80,19 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     },
   });
 
+  const flywheelReporter = new FlywheelReporter(db, managerDb, {
+    khUrl: config.flywheel.khUrl,
+    khToken: config.flywheel.khToken,
+    dryRun: config.flywheel.dryRun,
+    projectId: config.flywheel.projectId,
+    thresholds: config.flywheel.thresholds,
+    log: (level, message) => {
+      if (level === "error") app.log.error(message);
+      else if (level === "warn") app.log.warn(message);
+      else app.log.info(message);
+    },
+  });
+
   const ctx: RouteContext = {
     config,
     db,
@@ -93,6 +109,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     sessionService: new SessionService(db),
     metricsService,
     alertService,
+    flywheelReporter,
     authenticate,
   };
 
@@ -131,6 +148,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(sessionsRoutes, { ctx });
   await app.register(metricsRoutes, { ctx });
   await app.register(alertsRoutes, { ctx });
+  await app.register(flywheelRoutes, { ctx });
 
   // Trace 保留（TTL）清理器：按配置天数定期删除过期 trace。
   // 仅当配置了 obs_manager 连接且保留天数 > 0 时启用。
@@ -200,6 +218,23 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     );
   } else {
     app.log.warn("[alerts] evaluation disabled: OBS_MANAGER_DATABASE_URL not configured");
+  }
+
+  // ── 知识飞轮回流：观测信号 → knowledge-hub（幂等 + dry-run 灰度）──
+  if (ctx.flywheelReporter.enabled) {
+    void ctx.flywheelReporter.runScheduledEvaluation(); // 启动即评估一次
+    const flywheelTimer = setInterval(
+      () => void ctx.flywheelReporter.runScheduledEvaluation(),
+      config.flywheel.intervalMs,
+    );
+    flywheelTimer.unref();
+    app.log.info(
+      `[flywheel] reporter enabled (dryRun=${config.flywheel.dryRun}), interval ${Math.round(config.flywheel.intervalMs / 60_000)}m`,
+    );
+  } else {
+    app.log.warn(
+      "[flywheel] reporter disabled: set OBS_FLYWHEEL_KH_URL + OBS_FLYWHEEL_KH_TOKEN (+ OBS_MANAGER_DATABASE_URL)",
+    );
   }
 
   // 生产模式：托管构建好的前端 SPA（非 /api 路径回退 index.html）
