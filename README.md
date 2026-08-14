@@ -15,6 +15,12 @@
 - **数据保留**：trace 默认**永久保存**（无 TTL）；配置 `OBS_TRACE_RETENTION_DAYS`（默认 90，0=禁用）后，后台清理器按小时删除过期 trace（级联 span + 关联 cost/audit + 孤儿会话）。
 - **权限**：单管理员密码登录（JWT 12h），面向本地/自部署，不做多用户体系。
 
+## 界面预览
+
+![Agent 全链路观测台](docs/obs.png)
+
+> 观测台界面：Trace/Span 九态瀑布图、执行状态机（七态 + DAG tasks/attempts）、Token 成本与审计事件一目了然；配合告警、指标聚合与在线评测采样驱动飞轮。
+
 ## 快速开始
 
 前置：design-agent 的 PostgreSQL 已在运行（`gdt-postgres`，端口 5433）。
