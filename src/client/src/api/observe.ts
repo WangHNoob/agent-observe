@@ -205,7 +205,7 @@ export function pruneTraces(
 // ─── 在线评测采样候选池（flywheel 03-P4） ───────────────────────────────
 
 export type EvalCandidateStatus = "pending" | "exported" | "dismissed";
-export type EvalCandidateSource = "faq_miss" | "tool_chain" | "plain_query";
+export type EvalCandidateSource = "user_signal" | "faq_miss" | "tool_chain" | "plain_query";
 
 export interface EvalCandidate {
   id: string;

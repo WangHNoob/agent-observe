@@ -11,17 +11,16 @@ import type { Database } from "../db.js";
  * 01-P4 已交付），观测台负责「候选池展示页 + 导出」。
  *
  * 采样条件（方案 01 §2.2 子集，共享表可得的信号）：
+ *   - user_signal：用户对结果显式复制/评分（user_signal_events，design-agent 0010 迁移），
  *   - faq_miss：trace 属性带 faq 相关标记（attributes::text 匹配 faq），
  *   - tool_chain：同一 trace 的工具调用 span ≥ 2（spans phase=pre_tool_execution），
  *   - plain_query：其余完成的 query/design execution（低门槛保底）。
- *   「用户明确评价 / 复制点赞」类 UI 信号不在共享表，留待 design-agent
- *   前端事件接入（文档注明）。
  *
  * 护栏：按 (user_id, 归一化 question) 在 dedupeDays 内去重；单轮 maxPerRun 上限；
  * 只采 status=ok 的 trace + completed 的 execution；写路径全部走 obs_manager。
  */
 
-export type EvalCandidateSource = "faq_miss" | "tool_chain" | "plain_query";
+export type EvalCandidateSource = "user_signal" | "faq_miss" | "tool_chain" | "plain_query";
 export type EvalCandidateStatus = "pending" | "exported" | "dismissed";
 
 export interface EvalCandidate {
@@ -78,8 +77,9 @@ export class EvalSamplerService {
    * @returns 本轮采样的候选数量与各来源计数。
    */
   async runSampling(now = new Date()): Promise<{ sampled: number; bySource: Record<EvalCandidateSource, number> }> {
+    const emptyBySource: Record<EvalCandidateSource, number> = { user_signal: 0, faq_miss: 0, tool_chain: 0, plain_query: 0 };
     if (!this.managerDb) {
-      return { sampled: 0, bySource: { faq_miss: 0, tool_chain: 0, plain_query: 0 } };
+      return { sampled: 0, bySource: emptyBySource };
     }
     const since = new Date(now.getTime() - this.windowHours * 3_600_000).toISOString();
 
@@ -95,6 +95,7 @@ export class EvalSamplerService {
       attributes: Record<string, unknown> | string | null;
       started_at: string;
       span_count: number;
+      signal_count: number;
     }>(
       `SELECT t.id AS trace_id,
               t.execution_id,
@@ -108,7 +109,11 @@ export class EvalSamplerService {
               (SELECT COUNT(*)::int
                  FROM agent_spans s
                 WHERE s.trace_id = t.id
-                  AND s.phase = 'pre_tool_execution') AS span_count
+                  AND s.phase = 'pre_tool_execution') AS span_count,
+              (SELECT COUNT(*)::int
+                 FROM user_signal_events u
+                WHERE u.trace_id = t.id
+                   OR u.execution_id = t.execution_id) AS signal_count
          FROM agent_traces t
          JOIN executions e ON e.id = t.execution_id
         WHERE t.started_at >= $1
@@ -120,14 +125,14 @@ export class EvalSamplerService {
       [since],
     );
 
-    const bySource: Record<EvalCandidateSource, number> = { faq_miss: 0, tool_chain: 0, plain_query: 0 };
+    const bySource: Record<EvalCandidateSource, number> = { user_signal: 0, faq_miss: 0, tool_chain: 0, plain_query: 0 };
     let sampled = 0;
 
     for (const row of candidates.rows) {
       if (sampled >= this.maxPerRun) break;
       const question = String(row.requirement ?? "").trim();
       if (question.length === 0) continue;
-      const source = classifySource(row.attributes, Number(row.span_count ?? 0));
+      const source = classifySource(row.attributes, Number(row.span_count ?? 0), Number(row.signal_count ?? 0));
 
       // 2) 去重：同 (user, question) 在 dedupeDays 内已采样过则跳过
       const dup = await this.managerDb.query(
@@ -241,11 +246,13 @@ export class EvalSamplerService {
   }
 }
 
-/** 采样来源分类：faq 属性标记 > 工具链 ≥ 2 > 保底 plain。 */
+/** 采样来源分类：用户显式信号 > FAQ 属性标记 > 工具链 ≥ 2 > 保底 plain。 */
 export function classifySource(
   attributes: Record<string, unknown> | string | null | undefined,
   spanCount: number,
+  userSignalCount = 0,
 ): EvalCandidateSource {
+  if (userSignalCount > 0) return "user_signal";
   const text = typeof attributes === "string" ? attributes : JSON.stringify(attributes ?? {});
   if (/faq/i.test(text) && /(hit|miss|match)/i.test(text)) return "faq_miss";
   if (spanCount >= 2) return "tool_chain";

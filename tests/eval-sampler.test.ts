@@ -29,6 +29,7 @@ const traceRow = {
   attributes: {},
   started_at: "2026-08-13T01:00:00Z",
   span_count: 3,
+  signal_count: 0,
 };
 
 describe("EvalSamplerService (flywheel 03-P4)", () => {
@@ -137,12 +138,24 @@ describe("EvalSamplerService (flywheel 03-P4)", () => {
     });
   });
 
-  it("classifySource prefers faq markers, then tool chain, then plain", () => {
-    expect(classifySource({ faqHit: false, faqMatched: false }, 0)).toBe("faq_miss");
-    expect(classifySource({ faq: "miss" }, 5)).toBe("faq_miss");
-    expect(classifySource({}, 2)).toBe("tool_chain");
-    expect(classifySource(null, 1)).toBe("plain_query");
-    expect(classifySource("no markers", 0)).toBe("plain_query");
+  it("classifySource prefers user signals, then faq markers, then tool chain, then plain", () => {
+    expect(classifySource({}, 0, 1)).toBe("user_signal");
+    expect(classifySource({ faqHit: false }, 0, 0)).toBe("faq_miss");
+    expect(classifySource({ faq: "miss" }, 5, 0)).toBe("faq_miss");
+    expect(classifySource({}, 2, 0)).toBe("tool_chain");
+    expect(classifySource(null, 1, 0)).toBe("plain_query");
+    expect(classifySource("no markers", 0, 0)).toBe("plain_query");
+  });
+
+  it("user_signal source is sampled when the trace has signal events", async () => {
+    const rows = [{ ...traceRow, trace_id: "tr-sig", signal_count: 2 }];
+    const manager = fakeDb([]);
+    const svc = new EvalSamplerService(fakeDb(rows), manager, {});
+    const result = await svc.runSampling(new Date("2026-08-13T12:00:00Z"));
+    expect(result.sampled).toBe(1);
+    expect(result.bySource.user_signal).toBe(1);
+    const insert = manager.calls.find((c) => c.sql.includes("INSERT INTO obs_metrics.eval_candidates"));
+    expect(insert!.params[8]).toBe("user_signal");
   });
 
   it("logs the run summary", async () => {
