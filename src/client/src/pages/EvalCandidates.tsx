@@ -10,6 +10,7 @@ import {
 import { PageHeader } from "../components/Layout";
 
 const SOURCE_LABEL: Record<string, string> = {
+  user_signal: "用户复制/评分",
   faq_miss: "FAQ 未命中",
   tool_chain: "工具链 ≥ 2",
   plain_query: "普通 query",
