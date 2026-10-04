@@ -37,7 +37,7 @@ export async function evalCandidatesRoutes(
 
   app.post(
     "/api/eval/candidates/sample",
-    { preHandler: opts.ctx.authenticate },
+    { preHandler: [opts.ctx.authenticate, opts.ctx.requireAdmin] },
     async (_req, reply) => {
       const result = await opts.ctx.evalSamplerService.runSampling();
       if (result.sampled === 0 && !opts.ctx.evalSamplerService.enabled) {
@@ -49,7 +49,7 @@ export async function evalCandidatesRoutes(
 
   app.post(
     "/api/eval/candidates/:id/status",
-    { preHandler: opts.ctx.authenticate },
+    { preHandler: [opts.ctx.authenticate, opts.ctx.requireAdmin] },
     async (req, reply) => {
       const params = req.params as { id: string };
       const body = req.body as { status?: string; actor?: string };

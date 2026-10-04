@@ -99,7 +99,7 @@ export async function tracesRoutes(
 
   app.delete(
     "/api/traces/:id",
-    { preHandler: opts.ctx.authenticate },
+    { preHandler: [opts.ctx.authenticate, opts.ctx.requireAdmin] },
     async (req, reply) => {
       const id = (req.params as { id: string }).id;
       if (!ID_PATTERN.test(id)) {
@@ -122,7 +122,7 @@ export async function tracesRoutes(
 
   app.post(
     "/api/traces/prune",
-    { preHandler: opts.ctx.authenticate },
+    { preHandler: [opts.ctx.authenticate, opts.ctx.requireAdmin] },
     async (req, reply) => {
       const body = (req.body ?? {}) as { dryRun?: boolean };
       const filters = parseFilterBody(req.body);

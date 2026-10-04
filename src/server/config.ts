@@ -15,6 +15,8 @@ export interface AppConfig {
   jwtSecret: string;
   /** 单管理员登录密码（本地/自部署场景，不做多用户体系） */
   adminPassword: string;
+  /** 只读访客密码（演示场景：登录后 role=viewer，变更类接口拒绝）；未配置则禁用访客登录 */
+  viewerPassword?: string;
   port: number;
   host: string;
   /** 开发时前端（Vite 5180）跨域来源 */
@@ -97,6 +99,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     retentionSweepIntervalMs: Number(env.OBS_RETENTION_SWEEP_INTERVAL_MS ?? 3_600_000),
     jwtSecret: required("OBS_JWT_SECRET", env),
     adminPassword: required("OBS_ADMIN_PASSWORD", env),
+    viewerPassword: env.OBS_VIEWER_PASSWORD || undefined,
     port: Number(env.PORT ?? 4180),
     host: env.HOST ?? "0.0.0.0",
     corsOrigin: env.CORS_ORIGIN ?? "http://localhost:5180",

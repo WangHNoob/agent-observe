@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { login } from "../api/observe";
 
 export function Login() {
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState("visitor2026");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -32,17 +32,17 @@ export function Login() {
           agent-observe
         </div>
         <div className="sub">
-          Agent 全链路观测台 — 只读直连共享库，单管理员入口
+          Agent 全链路观测台 — 只读直连共享库；演示环境已预填访客密码，管理员请改密码登录
         </div>
         <form onSubmit={submit}>
           <input
             type="password"
-            placeholder="管理员密码"
+            placeholder="访客或管理员密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoFocus
             autoComplete="current-password"
-            aria-label="管理员密码"
+            aria-label="密码"
           />
           {error ? <div className="err" role="alert">{error}</div> : null}
           <button className="btn" type="submit" disabled={busy || !password}>

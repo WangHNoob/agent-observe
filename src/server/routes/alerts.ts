@@ -23,7 +23,7 @@ export async function alertsRoutes(
 
   app.post(
     "/api/alerts/:id/resolve",
-    { preHandler: opts.ctx.authenticate },
+    { preHandler: [opts.ctx.authenticate, opts.ctx.requireAdmin] },
     async (req, reply) => {
       const params = req.params as { id: string };
       const body = (req.body ?? {}) as { by?: string };
