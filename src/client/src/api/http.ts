@@ -12,9 +12,17 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+/** 构建时由 VITE_APP_BASE 注入（nginx /obs/ 前缀部署）；开发环境为 "/"。 */
+const APP_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+/** 把根相对 API 路径补上部署前缀，如 "/api/x" → "/obs/api/x"。 */
+function apiUrl(path: string): string {
+  return APP_BASE ? `${APP_BASE}${path}` : path;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -25,8 +33,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   if (res.status === 401) {
     clearToken();
-    if (!window.location.pathname.startsWith("/login")) {
-      window.location.href = "/login";
+    if (!window.location.pathname.startsWith(`${APP_BASE}/login`)) {
+      window.location.href = `${APP_BASE}/login`;
     }
     throw new Error("Unauthorized");
   }

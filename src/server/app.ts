@@ -38,6 +38,8 @@ export interface RouteContext {
   flywheelReporter: FlywheelReporter;
   evalSamplerService: EvalSamplerService;
   authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  /** 变更类接口门禁：viewer 角色返回 403（演示只读访客） */
+  requireAdmin: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
 }
 
 export interface BuildAppOptions {
@@ -61,6 +63,13 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       await req.jwtVerify();
     } catch {
       await reply.code(401).send({ error: "Unauthorized" });
+    }
+  };
+
+  const requireAdmin = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const role = (req.user as { role?: string } | undefined)?.role;
+    if (role !== "admin") {
+      await reply.code(403).send({ error: "Admin only" });
     }
   };
 
@@ -126,6 +135,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     flywheelReporter,
     evalSamplerService,
     authenticate,
+    requireAdmin,
   };
 
   // ── schema 契约校验：启动即检，漂移 fail-fast（可降级为告警）──

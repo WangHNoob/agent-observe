@@ -3,6 +3,8 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   root: "src/client",
+  // 部署在 nginx /obs/ 前缀下；开发环境默认 "/"
+  base: process.env.VITE_APP_BASE ?? "/",
   plugins: [react()],
   server: {
     port: 5180,
