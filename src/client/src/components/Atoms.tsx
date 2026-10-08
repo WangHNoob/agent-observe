@@ -3,8 +3,18 @@ import { useState } from "react";
 
 /** 通用原子组件：状态徽标 / 空态 / 加载态 / 时长格式化 / 复制 */
 
+/** 会话/执行状态别名 → 徽标语义（trace 状态 ok/error/unset 不经映射） */
+const STATUS_ALIAS: Record<string, string> = {
+  completed: "ok",
+  failed: "error",
+  running: "unset",
+  cancelled: "neutral",
+};
+
 export function StatusBadge({ status }: { status: string }) {
-  const cls = ["ok", "error", "unset"].includes(status) ? status : "neutral";
+  const cls = ["ok", "error", "unset"].includes(status)
+    ? status
+    : (STATUS_ALIAS[status] ?? "neutral");
   return (
     <span className={`badge ${cls}`}>
       <span className="dot" />

@@ -1,4 +1,4 @@
-import { apiFetch, queryString, setToken } from "./http";
+import { apiFetch, queryString, setRole, setToken } from "./http";
 
 // ─── 类型（与后端 services 对齐） ────────────────────────────────────────
 
@@ -148,11 +148,12 @@ export interface TraceFilters {
 // ─── API ─────────────────────────────────────────────────────────────────
 
 export async function login(password: string): Promise<void> {
-  const res = await apiFetch<{ token: string }>("/api/auth/login", {
+  const res = await apiFetch<{ token: string; role: string }>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ password }),
   });
   setToken(res.token);
+  setRole(res.role);
 }
 
 export function fetchOverview(): Promise<OverviewData> {

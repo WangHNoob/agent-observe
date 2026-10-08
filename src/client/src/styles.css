@@ -1104,6 +1104,15 @@ details.collapse[open] summary { border-bottom: 1px solid var(--border); }
   font-family: var(--mono);
 }
 
+.toast-err {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--error);
+  font-size: 13px;
+  font-family: var(--mono);
+}
+
 .live-dot {
   width: 7px; height: 7px;
   border-radius: 50%;
