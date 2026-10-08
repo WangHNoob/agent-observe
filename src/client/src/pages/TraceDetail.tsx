@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MousePointerClick, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { deleteTrace, fetchTrace, type Span } from "../api/observe";
+import { useRole } from "../hooks/useRole";
 import {
   CopyId,
   Empty,
@@ -22,27 +23,35 @@ export function TraceDetail() {
   const { id = "" } = useParams();
   const [selected, setSelected] = useState<Span | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const isAdmin = useRole() === "admin";
+  // 从哪来回哪去（会话详情 / 执行详情 / 列表都会带 state.from 跳入）
+  const from = (location.state as { from?: string } | null)?.from ?? "/traces";
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["trace", id],
     queryFn: () => fetchTrace(id),
   });
 
+  const [actionError, setActionError] = useState<string | null>(null);
   const delMutation = useMutation({
     mutationFn: () => deleteTrace(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["traces"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["session"] });
       void queryClient.invalidateQueries({ queryKey: ["overview"] });
-      navigate("/traces");
+      navigate(from);
     },
+    onError: (e) => setActionError(e instanceof Error ? e.message : String(e)),
   });
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (!window.confirm(`删除 trace「${data?.trace.name ?? id}」(${id.slice(0, 12)}…)？\n将级联删除其 span / cost / audit，不可恢复。`)) {
       return;
     }
-    await delMutation.mutateAsync();
+    delMutation.mutate();
   };
 
   if (isLoading) return <Spin label="加载 Trace 详情…" />;
@@ -67,15 +76,23 @@ export function TraceDetail() {
             <span>{fmtTokens(tokens)} tok</span>
           </span>
         }
-        backTo="/traces"
-        backLabel="返回 Trace 列表"
+        backTo={from}
+        backLabel="返回"
         actions={
-          <button className="icon-btn" title="删除此 trace" disabled={delMutation.isPending} onClick={confirmDelete}>
-            <Trash2 size={14} />
-            {delMutation.isPending ? "删除中…" : "删除"}
-          </button>
+          isAdmin ? (
+            <button className="icon-btn" title="删除此 trace" disabled={delMutation.isPending} onClick={confirmDelete}>
+              <Trash2 size={14} />
+              {delMutation.isPending ? "删除中…" : "删除"}
+            </button>
+          ) : null
         }
       />
+
+      {actionError ? (
+        <div style={{ marginBottom: 12 }}>
+          <span className="toast-err">{actionError}</span>
+        </div>
+      ) : null}
 
       <div className="meta-strip">
         <div className="meta-chip">

@@ -11,6 +11,7 @@ import {
 } from "../api/observe";
 import { Empty, ErrorBox, Spin, StatusBadge, fmtMs, fmtTime, fmtTokens } from "../components/Atoms";
 import { PageHeader } from "../components/Layout";
+import { useRole } from "../hooks/useRole";
 
 const PAGE_SIZE = 50;
 
@@ -70,15 +71,23 @@ export function TraceList() {
   const totalPages = data ? Math.max(Math.ceil(data.total / PAGE_SIZE), 1) : 1;
 
   const queryClient = useQueryClient();
+  const isAdmin = useRole() === "admin";
+  const [actionError, setActionError] = useState<string | null>(null);
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["traces"] });
+    void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    void queryClient.invalidateQueries({ queryKey: ["session"] });
     void queryClient.invalidateQueries({ queryKey: ["overview"] });
     void queryClient.invalidateQueries({ queryKey: ["meta"] });
   };
 
   const delMutation = useMutation({
     mutationFn: (id: string) => deleteTrace(id),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setActionError(null);
+      refresh();
+    },
+    onError: (e) => setActionError(e instanceof Error ? e.message : String(e)),
   });
 
   const [pruneStatus, setPruneStatus] = useState<string>("unset");
@@ -95,6 +104,7 @@ export function TraceList() {
         dryRun,
       ),
     onSuccess: (res) => {
+      setActionError(null);
       if (res.dryRun) {
         setPreview(res.matched);
         setPreviewMsg(null);
@@ -104,13 +114,14 @@ export function TraceList() {
         refresh();
       }
     },
+    onError: (e) => setActionError(e instanceof Error ? e.message : String(e)),
   });
 
-  const deleteOne = async (id: string, name: string) => {
+  const deleteOne = (id: string, name: string) => {
     if (!window.confirm(`删除 trace「${name}」(${id.slice(0, 12)}…)？\n将级联删除其 span / cost / audit，不可恢复。`)) {
       return;
     }
-    await delMutation.mutateAsync(id);
+    delMutation.mutate(id);
   };
 
   const onFilterKey = (e: React.KeyboardEvent) => {
@@ -191,7 +202,13 @@ export function TraceList() {
 
           <div className="rail-section">
             <h2>数据保留{retentionDays > 0 ? ` · TTL ${retentionDays}d` : ""}</h2>
-            {pruneAvailable ? (
+            {!pruneAvailable ? (
+              <p className="rail-hint">
+                管理未启用：未配置 <code>OBS_MANAGER_DATABASE_URL</code>
+              </p>
+            ) : !isAdmin ? (
+              <p className="rail-hint">只读访客：清理与删除需管理员登录</p>
+            ) : (
               <>
                 <label className="rail-field">
                   <span>清理状态</span>
@@ -229,11 +246,8 @@ export function TraceList() {
                 </div>
                 {preview != null ? <span className="mono muted" style={{ fontSize: 12 }}>匹配 {preview} 条</span> : null}
                 {previewMsg ? <span className="toast-ok">{previewMsg}</span> : null}
+                {actionError ? <span className="toast-err">{actionError}</span> : null}
               </>
-            ) : (
-              <p className="rail-hint">
-                管理未启用：未配置 <code>OBS_MANAGER_DATABASE_URL</code>
-              </p>
             )}
           </div>
         </aside>
@@ -302,7 +316,7 @@ export function TraceList() {
                         <Link className="btn ghost" to={`/traces/${t.id}`} style={{ padding: "3px 10px", fontSize: 12, marginRight: 6 }}>
                           查看
                         </Link>
-                        {pruneAvailable ? (
+                        {pruneAvailable && isAdmin ? (
                           <button
                             className="icon-btn"
                             title="删除此 trace"
