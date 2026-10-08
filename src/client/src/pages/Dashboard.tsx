@@ -84,7 +84,7 @@ export function Dashboard() {
                 {data.modeBreakdown.map((m) => (
                   <tr key={m.mode}>
                     <td>
-                      <Link to={`/traces?mode=${m.mode}`}>{m.mode}</Link>
+                      <Link to={`/sessions?mode=${m.mode}`}>{m.mode}</Link>
                     </td>
                     <td className="num">{m.n}</td>
                     <td className="num" style={{ color: m.errors ? "var(--error)" : undefined }}>

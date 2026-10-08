@@ -105,7 +105,7 @@ export function TraceDetail() {
         </div>
         <div className="meta-chip">
           <span className="meta-k">session</span>
-          <Link className="meta-v mono" to={`/traces?sessionId=${trace.sessionId}`}>
+          <Link className="meta-v mono" to={`/sessions/${trace.sessionId}`} title="查看会话详情">
             {trace.sessionId.slice(0, 14)}…
           </Link>
         </div>

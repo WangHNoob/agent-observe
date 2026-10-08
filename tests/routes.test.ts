@@ -298,3 +298,118 @@ describe.skipIf(!HAS_MANAGER)("management (obs_manager)", () => {
     }
   });
 });
+
+describe("sessions", () => {
+  it("requires auth", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/sessions" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("lists sessions with rollups", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/sessions?limit=5",
+      headers: auth(token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(typeof body.total).toBe("number");
+    if (body.items.length === 0) return; // 空库守卫
+    const item = body.items[0];
+    for (const key of ["id", "mode", "status", "requirement", "traceCount", "executionCount", "inputTokens", "costMicros"]) {
+      expect(item).toHaveProperty(key);
+    }
+    expect(typeof item.costMicros).toBe("string");
+  });
+
+  it("filters by mode and tolerates invalid/oversized params", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/sessions?mode=query&limit=500",
+      headers: auth(token),
+    });
+    expect(res.statusCode).toBe(200);
+    for (const item of res.json().items) {
+      expect(item.mode).toBe("query");
+    }
+  });
+
+  it("filters by q against requirement", async () => {
+    const all = await app.inject({
+      method: "GET",
+      url: "/api/sessions?limit=5",
+      headers: auth(token),
+    });
+    const first = all.json().items[0];
+    if (!first) return; // 空库守卫
+    const frag = String(first.requirement).slice(0, 8);
+    if (!frag) return;
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/sessions?q=${encodeURIComponent(frag)}`,
+      headers: auth(token),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().total).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns session detail with per-trace rollups, traceIds and totals", async () => {
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/sessions?limit=1",
+      headers: auth(token),
+    });
+    const first = list.json().items[0];
+    if (!first) return; // 空库守卫
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/sessions/${first.id}`,
+      headers: auth(token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.session.id).toBe(first.id);
+    expect(body.totals).toHaveProperty("inputTokens");
+    expect(body.totals).toHaveProperty("costMicros");
+    for (const t of body.traces) {
+      expect(t).toHaveProperty("inputTokens");
+      expect(t).toHaveProperty("costMicros");
+    }
+    for (const e of body.executions) {
+      expect(Array.isArray(e.traceIds)).toBe(true);
+    }
+  });
+
+  it("returns 404 for unknown session", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/sessions/no-such-session-000000000",
+      headers: auth(token),
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+// viewer 只读门禁：DELETE 在 preHandler 即被拒（无需真实 fixture 行）
+const HAS_VIEWER = Boolean(process.env.OBS_VIEWER_PASSWORD);
+
+describe.skipIf(!HAS_VIEWER)("viewer role gating", () => {
+  it("logs in as viewer and rejects DELETE with 403 Admin only", async () => {
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { password: process.env.OBS_VIEWER_PASSWORD },
+    });
+    expect(login.statusCode).toBe(200);
+    expect(login.json().role).toBe("viewer");
+
+    const del = await app.inject({
+      method: "DELETE",
+      url: "/api/traces/fixture-trace-does-not-exist",
+      headers: auth(login.json().token),
+    });
+    expect(del.statusCode).toBe(403);
+    expect(del.json().error).toBe("Admin only");
+  });
+});

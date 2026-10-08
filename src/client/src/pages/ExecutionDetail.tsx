@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { MousePointerClick } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { fetchExecution, type Span } from "../api/observe";
 import { CopyId, Empty, ErrorBox, Spin, StatusBadge, fmtTime } from "../components/Atoms";
 import { PageHeader } from "../components/Layout";
@@ -11,6 +11,9 @@ import { Waterfall } from "../components/Waterfall";
 export function ExecutionDetail() {
   const { id = "" } = useParams();
   const [selected, setSelected] = useState<Span | null>(null);
+  const location = useLocation();
+  // 从哪来回哪去（会话详情 / Trace 详情都会带 state.from 跳入）
+  const from = (location.state as { from?: string } | null)?.from ?? "/traces";
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["execution", id, "primaryTrace"],
@@ -34,14 +37,14 @@ export function ExecutionDetail() {
             {execution.completedAt ? <span>完成 {fmtTime(execution.completedAt)}</span> : null}
           </span>
         }
-        backTo="/traces"
-        backLabel="返回 Trace 列表"
+        backTo={from}
+        backLabel="返回"
       />
 
       <div className="meta-strip">
         <div className="meta-chip">
           <span className="meta-k">session</span>
-          <Link className="meta-v mono" to={`/traces?sessionId=${execution.sessionId}`}>
+          <Link className="meta-v mono" to={`/sessions/${execution.sessionId}`} title="查看会话详情">
             {execution.sessionId.slice(0, 14)}…
           </Link>
         </div>

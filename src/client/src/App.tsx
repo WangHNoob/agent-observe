@@ -4,6 +4,8 @@ import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { ExecutionDetail } from "./pages/ExecutionDetail";
 import { Login } from "./pages/Login";
+import { SessionDetail } from "./pages/SessionDetail";
+import { SessionList } from "./pages/SessionList";
 import { TraceDetail } from "./pages/TraceDetail";
 import { TraceList } from "./pages/TraceList";
 
@@ -27,6 +29,8 @@ export function App() {
         }
       >
         <Route path="/" element={<Dashboard />} />
+        <Route path="/sessions" element={<SessionList />} />
+        <Route path="/sessions/:id" element={<SessionDetail />} />
         <Route path="/traces" element={<TraceList />} />
         <Route path="/traces/:id" element={<TraceDetail />} />
         <Route path="/executions/:id" element={<ExecutionDetail />} />
