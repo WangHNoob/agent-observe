@@ -38,47 +38,6 @@ export interface AppConfig {
     timeoutSpikeThreshold: number;
     hitlStallHours: number;
   };
-  /** 知识库飞轮回流（观测信号 → knowledge-hub） */
-  flywheel: {
-    /** knowledge-hub 基址；未配置则回流禁用 */
-    khUrl?: string;
-    /** knowledge-hub service account JWT（经 /api/auth/login 获取） */
-    khToken?: string;
-    /** 评估周期（毫秒），默认 10 分钟 */
-    intervalMs: number;
-    /** dry-run：只打印将上报的信号，不上报不落库（灰度开关） */
-    dryRun: boolean;
-    /** 目标项目（默认 default_project） */
-    projectId: string;
-    /** 规则阈值 */
-    thresholds: {
-      /** R1：同需求 execution 错误率 ≥ 该值（0-1） */
-      errorRate: number;
-      /** R1：同需求 execution 失败数 ≥ 该值 */
-      minErrors: number;
-      /** R2：1h 超时数 ≥ 该值 */
-      minTimeouts: number;
-      /** R3：1h 同工具失败数 ≥ 该值 */
-      minToolErrors: number;
-      /** R4：24h 成本阈值（estimated_cost_micros） */
-      costThresholdMicros: number;
-      /** 幂等窗口（小时），同信号窗口内不重复上报 */
-      dedupeWindowHours: number;
-    };
-  };
-  /** 在线评测采样（flywheel 03-P4）：生产 query trace → 判分候选池 */
-  evalSampling: {
-    /** 采样器开关（默认开启；未配置 obs_manager 时自动禁用写入） */
-    enabled: boolean;
-    /** 采样窗口（小时），默认 24 */
-    windowHours: number;
-    /** 单轮最多采样数，默认 20 */
-    maxPerRun: number;
-    /** 同 (user, question) 去重窗口（天），默认 90 */
-    dedupeDays: number;
-    /** 采样运行间隔（毫秒），默认 1 小时 */
-    intervalMs: number;
-  };
 }
 
 function required(name: string, env: NodeJS.ProcessEnv): string {
@@ -114,28 +73,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       costSpikeThresholdMicros: Number(env.OBS_ALERT_COST_THRESHOLD_MICROS ?? 5_000_000),
       timeoutSpikeThreshold: Number(env.OBS_ALERT_TIMEOUT_THRESHOLD ?? 3),
       hitlStallHours: Number(env.OBS_ALERT_HITL_STALL_HOURS ?? 24),
-    },
-    flywheel: {
-      khUrl: env.OBS_FLYWHEEL_KH_URL || undefined,
-      khToken: env.OBS_FLYWHEEL_KH_TOKEN || undefined,
-      intervalMs: Number(env.OBS_FLYWHEEL_INTERVAL_MS ?? 600_000),
-      dryRun: env.OBS_FLYWHEEL_DRY_RUN !== "false",
-      projectId: env.OBS_FLYWHEEL_PROJECT_ID ?? "default_project",
-      thresholds: {
-        errorRate: Number(env.OBS_FLYWHEEL_ERROR_RATE ?? 0.5),
-        minErrors: Number(env.OBS_FLYWHEEL_MIN_ERRORS ?? 3),
-        minTimeouts: Number(env.OBS_FLYWHEEL_MIN_TIMEOUTS ?? 3),
-        minToolErrors: Number(env.OBS_FLYWHEEL_MIN_TOOL_ERRORS ?? 3),
-        costThresholdMicros: Number(env.OBS_FLYWHEEL_COST_THRESHOLD_MICROS ?? 5_000_000),
-        dedupeWindowHours: Number(env.OBS_FLYWHEEL_DEDUPE_HOURS ?? 24),
-      },
-    },
-    evalSampling: {
-      enabled: env.OBS_EVAL_SAMPLING_ENABLED !== "false",
-      windowHours: Number(env.OBS_EVAL_SAMPLING_WINDOW_HOURS ?? 24),
-      maxPerRun: Number(env.OBS_EVAL_SAMPLING_MAX_PER_RUN ?? 20),
-      dedupeDays: Number(env.OBS_EVAL_SAMPLING_DEDUPE_DAYS ?? 90),
-      intervalMs: Number(env.OBS_EVAL_SAMPLING_INTERVAL_MS ?? 3_600_000),
     },
   };
 }
