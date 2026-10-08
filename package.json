@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server/index.ts",
     "dev:web": "vite --host 0.0.0.0",
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p tsconfig.json && vite build --base=/obs/",
     "start": "tsx src/server/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",

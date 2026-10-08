@@ -3,7 +3,8 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   root: "src/client",
-  // 部署在 nginx /obs/ 前缀下；开发环境默认 "/"
+  // 部署在 nginx /obs/ 前缀下；生产 base 由 `pnpm build` 的 --base=/obs/ 内置（勿裸跑 vite build），
+  // 开发环境（vite / dev:web，:5180）默认 "/"
   base: process.env.VITE_APP_BASE ?? "/",
   plugins: [react()],
   server: {
