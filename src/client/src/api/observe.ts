@@ -203,45 +203,79 @@ export function pruneTraces(
   });
 }
 
-// ─── 在线评测采样候选池（flywheel 03-P4） ───────────────────────────────
+// ─── 会话（session → trace → span 层级的顶层） ───────────────────────────
 
-export type EvalCandidateStatus = "pending" | "exported" | "dismissed";
-export type EvalCandidateSource = "user_signal" | "faq_miss" | "tool_chain" | "plain_query";
-
-export interface EvalCandidate {
-  id: string;
-  traceId: string;
-  executionId: string;
-  userId: string;
-  sessionId: string;
-  mode: string;
-  question: string;
-  answer: string;
-  source: EvalCandidateSource;
-  status: EvalCandidateStatus;
-  createdAt: string;
-  exportedAt: string | null;
-}
-
-export function fetchEvalCandidates(filters: {
-  status?: EvalCandidateStatus;
+export interface SessionFilters {
+  mode?: string;
+  status?: string;
+  q?: string;
   limit?: number;
   offset?: number;
-}): Promise<{ samplingEnabled: boolean; candidates: EvalCandidate[] }> {
-  return apiFetch(`/api/eval/candidates${queryString(filters as Record<string, string | number | undefined>)}`);
 }
 
-export function triggerEvalSampling(): Promise<{ sampled: number; bySource: Record<EvalCandidateSource, number> }> {
-  return apiFetch("/api/eval/candidates/sample", { method: "POST" });
+export interface SessionListItem {
+  id: string;
+  requirement: string;
+  mode: string;
+  role: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  executionCount: number;
+  traceCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  costMicros: string;
 }
 
-export function markEvalCandidateStatus(
-  id: string,
-  status: EvalCandidateStatus,
-  actor = "admin",
-): Promise<{ ok: boolean }> {
-  return apiFetch(`/api/eval/candidates/${encodeURIComponent(id)}/status`, {
-    method: "POST",
-    body: JSON.stringify({ status, actor }),
-  });
+export interface SessionDetail {
+  session: {
+    id: string;
+    userId: string;
+    requirement: string;
+    mode: string;
+    role: string;
+    status: string;
+    output: string | null;
+    error: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  traces: {
+    id: string;
+    name: string;
+    mode: string;
+    status: string;
+    executionId: string | null;
+    startedAt: string;
+    endedAt: string | null;
+    durationMs: number | null;
+    inputTokens: number;
+    outputTokens: number;
+    costMicros: string;
+  }[];
+  executions: {
+    id: string;
+    status: string;
+    mode: string | null;
+    createdAt: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    traceIds: string[];
+  }[];
+  totals: {
+    inputTokens: number;
+    outputTokens: number;
+    costMicros: string;
+  };
+}
+
+export function fetchSessions(
+  filters: SessionFilters,
+): Promise<{ items: SessionListItem[]; total: number }> {
+  return apiFetch(`/api/sessions${queryString(filters as Record<string, string | number | undefined>)}`);
+}
+
+export function fetchSession(id: string): Promise<SessionDetail> {
+  return apiFetch(`/api/sessions/${encodeURIComponent(id)}`);
 }

@@ -52,7 +52,7 @@ pnpm build && pnpm start
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/auth/login` | 管理员密码 → JWT |
+| POST | `/api/auth/login` | 密码 → JWT（管理员密码 → `role=admin`；配置了 `OBS_VIEWER_PASSWORD` 时该密码 → `role=viewer` 只读） |
 | GET | `/api/auth/me` | 当前 JWT 身份 |
 | GET | `/api/health` | 健康检查（无需鉴权） |
 | GET | `/api/meta` | 轻量元信息：`retentionDays` / `pruneAvailable`（无 DB 聚合） |
@@ -61,7 +61,8 @@ pnpm build && pnpm start
 | GET | `/api/traces/:id` | 详情：trace + **lite spans**（默认仅保留 token 键）+ cost + audit + `executionSummary`；`?full=1` 返回完整 span attributes |
 | GET | `/api/traces/:id/spans/:spanId` | 按需拉取单个 span 的完整 attributes（瀑布图点击后） |
 | GET | `/api/executions/:id` | 执行详情：七态 execution + DAG tasks + attempts；`?include=primaryTrace` 一次附带主 Trace（lite spans） |
-| GET | `/api/sessions/:id` | 会话详情：会话 + 其 traces + 其 executions |
+| GET | `/api/sessions` | 会话列表（mode/status/q + 分页；页内 LATERAL 聚合 execution/trace/token/cost） |
+| GET | `/api/sessions/:id` | 会话详情：会话 + traces（含 per-trace token/cost）+ executions（含 traceIds）+ 汇总 |
 | GET | `/api/metrics/trend?days=N` | 小时级指标趋势（1–90 天，数据源 obs_metrics.metric_hourly；未配置 manager 时 `metricsEnabled=false`） |
 | GET | `/api/alerts` | 告警列表（open 优先，按 last_seen 倒序；`alertsEnabled=false` 表示未配置 manager） |
 | POST | `/api/alerts/:id/resolve` | 人工解决告警（body: `{ by }` 留痕） |
@@ -79,10 +80,16 @@ pnpm build && pnpm start
 
 深色仪器台主题（DM Sans + IBM Plex Mono）：统一空态 / 加载态 / 错误态，详情页可返回，Trace ID 可复制。
 
-- `/` 总览：指标卡 + 24h 逐小时趋势条图 + 分模式统计 + 最近错误（约 30s 轮询，配合 overview 短缓存）
+层级 = **会话 → 执行/Trace → Span** 三次下钻：会话列表选会话，会话详情看执行卡片与其 traces，Trace 详情看 span 瀑布图。
+
+- `/` 总览：指标卡 + 24h 逐小时趋势条图 + 分模式统计（链到会话列表）+ 最近错误（约 30s 轮询，配合 overview 短缓存）
+- `/sessions` 会话列表：模式 / 状态 / 需求搜索 + 分页，含执行数 / Trace 数 / Token / 成本聚合
+- `/sessions/:id` 会话详情：需求 → 输出；执行卡片（含各自 traces：名称/模式/状态/时长/Token/成本）；未关联执行的 Trace 平铺兜底；旧数据 session（不在 sessions 表）给出「按 sessionId 查 Trace」引导
 - `/traces` 列表：多条件筛选（Enter / 重置）+ 分页；保留策略走 `/api/meta`；**单条删除**与**批量清理面板**（预览匹配数 → 确认删除）
-- `/traces/:id` 详情：**span 瀑布图**（九态 phase 着色，键盘可选中）→ 点击后再拉完整 attributes；内嵌 requirement / agent 输出摘要；cost / audit；删除入口
+- `/traces/:id` 详情：**span 瀑布图**（九态 phase 着色，键盘可选中）→ 点击后再拉完整 attributes；内嵌 requirement / agent 输出摘要；cost / audit；删除入口；session/execution 芯片互链（back 按来源页返回）
 - `/executions/:id` 详情：一次请求含主 Trace 瀑布图 + 任务 DAG + attempts 重试链
+
+**角色显隐**：删除 / 清理等管理控件仅 `role=admin` 可见（登录响应存 role，旧 token 经 `/api/auth/me` 回填）；viewer 登录只读浏览。
 
 ## 性能要点
 

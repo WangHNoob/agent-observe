@@ -1,4 +1,4 @@
-import { Activity, LayoutDashboard, ListTree, LogOut } from "lucide-react";
+import { Activity, LayoutDashboard, ListTree, LogOut, MessagesSquare } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { clearToken } from "../api/http";
 
@@ -20,6 +20,10 @@ export function Layout() {
         <NavLink to="/" end className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           <LayoutDashboard size={16} strokeWidth={1.75} />
           总览
+        </NavLink>
+        <NavLink to="/sessions" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
+          <MessagesSquare size={16} strokeWidth={1.75} />
+          会话
         </NavLink>
         <NavLink to="/traces" className={({ isActive }) => (isActive ? "nav active" : "nav")}>
           <ListTree size={16} strokeWidth={1.75} />
