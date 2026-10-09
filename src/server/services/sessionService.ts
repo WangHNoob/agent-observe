@@ -96,7 +96,9 @@ function sessionListPageSql(): string {
     SELECT COUNT(*) AS n FROM executions e WHERE e.session_id = p.id
   ) x ON TRUE
   LEFT JOIN LATERAL (
-    SELECT COUNT(*) AS n,
+    -- COUNT 必须对 trace 去重：join cost_usage 会按 cost 行数 fanout（一次对话
+    -- 有多少次 LLM 调用就有多少 cost 行），否则 traceCount 虚高
+    SELECT COUNT(DISTINCT tr.id) AS n,
            SUM(c.input_tokens) AS in_tok,
            SUM(c.output_tokens) AS out_tok,
            SUM(c.estimated_cost_micros) AS cost
