@@ -391,6 +391,69 @@ describe("sessions", () => {
   });
 });
 
+// 回归：会话列表 traceCount 曾按 join cost_usage 的行数 fanout（一次对话多少次
+// LLM 调用就被当成多少个 trace）。fixture：1 会话 + 1 trace + 3 cost 行 → traceCount 必须是 1。
+describe.skipIf(!HAS_MANAGER)("sessions list traceCount (cost fanout regression)", () => {
+  const managerUrl = process.env.OBS_MANAGER_DATABASE_URL!;
+  const uid = randomUUID().replaceAll("-", "").slice(0, 20);
+  const sessionId = `fixture-sess-${uid}`;
+  const traceId = `fixture-trace-${uid}`;
+  let client: pg.Client;
+
+  beforeAll(async () => {
+    client = new pg.Client({ connectionString: managerUrl });
+    await client.connect();
+    await client.query(
+      `INSERT INTO agent_trace_sessions (id, user_id, session_id)
+       VALUES ($1, 'fixture-user', $1)`,
+      [sessionId],
+    );
+    await client.query(
+      `INSERT INTO sessions (id, user_id, requirement, mode, role, status)
+       VALUES ($1, 'fixture-user', $2, 'query', 'tester', 'completed')`,
+      [sessionId, `traceCount regression ${sessionId}`],
+    );
+    await client.query(
+      `INSERT INTO agent_traces (id, user_id, trace_session_id, session_id, name, status, attributes, started_at, created_at)
+       VALUES ($1, 'fixture-user', $2, $2, 'director.query', 'ok', '{}'::jsonb, NOW(), NOW())`,
+      [traceId, sessionId],
+    );
+    for (let i = 0; i < 3; i++) {
+      await client.query(
+        `INSERT INTO cost_usage (id, user_id, trace_id, agent_name, model_name, input_tokens, output_tokens, estimated_cost_micros)
+         VALUES ($1, 'fixture-user', $2, 'FixtureAgent', 'fixture-model', 10, 5, 0)`,
+        [randomUUID(), traceId],
+      );
+    }
+  });
+
+  afterAll(async () => {
+    if (!client) return;
+    // 自建自删，逆依赖顺序清理（sessions 行是 design-agent 业务表，只动 fixture id）
+    await client.query(`DELETE FROM cost_usage WHERE trace_id = $1`, [traceId]);
+    await client.query(`DELETE FROM agent_spans WHERE trace_id = $1`, [traceId]);
+    await client.query(`DELETE FROM agent_traces WHERE id = $1`, [traceId]);
+    await client.query(`DELETE FROM sessions WHERE id = $1`, [sessionId]);
+    await client.query(`DELETE FROM agent_trace_sessions WHERE id = $1`, [sessionId]);
+    await client.end();
+  });
+
+  it("counts distinct traces, not joined cost rows", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/sessions?q=${encodeURIComponent(sessionId)}`,
+      headers: auth(token),
+    });
+    expect(res.statusCode).toBe(200);
+    const hit = res.json().items.find((s: { id: string }) => s.id === sessionId);
+    expect(hit).toBeDefined();
+    expect(hit.traceCount).toBe(1); // 修复前：3（fanout）
+    expect(hit.executionCount).toBe(0);
+    expect(hit.inputTokens).toBe(30);
+    expect(hit.outputTokens).toBe(15);
+  });
+});
+
 // viewer 只读门禁：DELETE 在 preHandler 即被拒（无需真实 fixture 行）
 const HAS_VIEWER = Boolean(process.env.OBS_VIEWER_PASSWORD);
 
