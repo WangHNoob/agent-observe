@@ -17,7 +17,7 @@
 
 ## 界面预览
 
-![Agent 全链路观测台](docs/obs.png)
+![Agent 全链路观测台](assets/observatory.png)
 
 > 观测台界面：Trace/Span 九态瀑布图、执行状态机（七态 + DAG tasks/attempts）、Token 成本与审计事件一目了然；配合告警与指标聚合。
 
@@ -115,6 +115,6 @@ pnpm build       # 前端 vite 构建
 - Redis 执行事件流回放（chunk 文本回放，依赖 design-agent Redis 留存）
 - OTLP exporter 对接（Jaeger/Tempo，属 agent 端事项）
 - 多用户 / 只读角色密码轮换
-- 共享库建议索引落地：见 [docs/suggested-indexes.md](./docs/suggested-indexes.md)（在 design-agent 的 drizzle 迁移中执行）
+- 共享库建议索引落地：见 [assets/suggested-indexes.md](./assets/suggested-indexes.md)（在 design-agent 的 drizzle 迁移中执行）
 - 回流信号 R5（低反馈率组件 → kb_report_stale）：待 knowledge-hub 消费侧指标（引用率/点击率）就绪后接入（K7 消费维度已落地，R5 可接）
 - 「用户明确评价 / 复制点赞」类采样信号：待 design-agent 前端事件写入共享表后接入采样器（当前采样条件为 FAQ 未命中 / 工具链 ≥ 2 / 保底普通 query）

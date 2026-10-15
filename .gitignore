@@ -1,4 +1,15 @@
 node_modules/
 dist/
-.env
+.env*
+!.env.example
 *.log
+
+# 内部文档（本地保留）；对外截图与说明在 assets/
+docs/
+
+# 编辑器/系统/缓存
+.DS_Store
+.vscode/
+.idea/
+coverage/
+*.tsbuildinfo
